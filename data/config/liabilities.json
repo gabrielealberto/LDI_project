@@ -1,0 +1,11 @@
+[
+  {
+    "name": "Pension",
+    "category": "pension",
+    "start_date": "2037-01-01",
+    "end_date": "2053-01-01",
+    "initial_cashflow": 9000,
+    "frequency": "annual",
+    "inflation_rate": 0.025
+  }
+]
