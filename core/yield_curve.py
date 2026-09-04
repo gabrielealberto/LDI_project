@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from utils import CURVE_PATH
+from .utils import CURVE_PATH
 
 CSV_PATH = CURVE_PATH
 

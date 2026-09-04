@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, brentq, milp
 from scipy.sparse import csr_matrix, hstack, identity
 
-from utils import (
+from .utils import (
     BOND_CASHFLOWS_PATH,
     BONDS_PATH,
     BROKER_FEE_RATE,
@@ -359,8 +359,9 @@ def optimize_cashflow_matching(
         terminal_constraint = hstack(
             [
                 csr_matrix(
-                    (terminal_asset_cashflows - terminal_capital_ratio * segment_lot_costs)
-                    .reshape(1, -1)
+                    (terminal_asset_cashflows - terminal_capital_ratio * segment_lot_costs).reshape(
+                        1, -1
+                    )
                 ),
                 csr_matrix((-terminal_capital_ratio * segment_fixed_fees).reshape(1, -1)),
                 csr_matrix((1, n_months)),
@@ -619,9 +620,9 @@ def export_ldi_excel(result, output_path=OUTPUT_PATH):
 
 def main():
     """Run the monthly, basic LDI workflow from locally prepared inputs."""
-    from future_liabilities import portfolio as liability_portfolio
+    from .future_liabilities import scenario_cashflows
 
-    dates, cashflows = liability_portfolio.merge_liabilities()
+    dates, cashflows = scenario_cashflows()
     target = pd.DataFrame({"date": dates, "cashflow": cashflows})
     matrix, bonds = load_bond_inputs()
     result = optimize_cashflow_matching(target, matrix, bonds)

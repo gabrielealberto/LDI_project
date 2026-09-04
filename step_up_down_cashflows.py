@@ -10,13 +10,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bond_cash_flow_creator import gross_ytm, load_clean_bonds, merge_clean_bonds
-from utils import NOMINAL, PROCESSED_DIR
+from core.bond_cash_flow_creator import gross_ytm, load_clean_bonds, merge_clean_bonds
+from core.utils import NOMINAL
 
 
 OUTPUT_PATH = Path("data/config/step_up_down_cashflows.json")
-VALIDATION_PATH = PROCESSED_DIR / "step_up_down_cashflow_validation.json"
-SOURCES_PATH = PROCESSED_DIR / "step_up_down_cashflow_sources.json"
 YTM_TOLERANCE = 0.02  # percentage points
 
 # Each schedule is transcribed from the linked official exchange, MEF, or
@@ -110,7 +108,9 @@ def schedule_for_bond(isincode, terms, nominal=NOMINAL):
     issue = pd.Timestamp(terms["issue_date"])
     maturity = pd.Timestamp(terms["maturity_date"])
     months = 12 // terms["frequency"]
-    dates = pd.date_range(issue + pd.DateOffset(months=months), maturity, freq=pd.DateOffset(months=months))
+    dates = pd.date_range(
+        issue + pd.DateOffset(months=months), maturity, freq=pd.DateOffset(months=months)
+    )
     rates = np.repeat(terms["annual_rates"], terms["period_counts"])
     if len(dates) != len(rates) or dates[-1] != maturity:
         raise ValueError(f"Invalid coupon schedule for {isincode}")
@@ -196,9 +196,6 @@ def build_and_validate():
 def main():
     schedules, validation = build_and_validate()
     all_match = all(row["matches"] for row in validation)
-    VALIDATION_PATH.parent.mkdir(parents=True, exist_ok=True)
-    VALIDATION_PATH.write_text(json.dumps(validation, indent=2), encoding="utf-8")
-    SOURCES_PATH.write_text(json.dumps(STEP_UP_DOWN_TERMS, indent=2), encoding="utf-8")
     if not all_match:
         print(json.dumps(validation, indent=2))
         print("No contractual cash-flow JSON was written because validation failed.")
@@ -208,8 +205,6 @@ def main():
     print(f"Validated bonds: {len(validation)}")
     print(f"Contractual cash-flow rows: {len(schedules)}")
     print(f"Cash-flow JSON: {OUTPUT_PATH}")
-    print(f"Validation audit: {VALIDATION_PATH}")
-    print(f"Source audit: {SOURCES_PATH}")
     return 0
 
 

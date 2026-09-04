@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.image as mpimg
 import pandas as pd
 
-from plots import plot_linkedin_summary
+from core.plots import plot_linkedin_summary
 
 
 class LinkedInPlotTests(unittest.TestCase):

@@ -21,23 +21,27 @@ It is not investment, tax, or legal advice.
 - Exports an Excel audit trail, a three-chart analytical dashboard, and a
   square presentation graphic designed for LinkedIn.
 - Defines liabilities in JSON, without editing Python source.
+- Uses one selected coherent FOI/HICP scenario for inflation-linked assets and
+  Italian inflation-indexed liabilities.
 
 ## Repository structure
 
 | Path | Purpose |
 | --- | --- |
-| `data/config/` | Versioned liability configuration. |
+| `data/config/` | Versioned liability, inflation-linked, and contractual cash-flow configuration. |
 | `data/raw/` | Local source-data cache, ignored by Git. |
 | `data/processed/` | Local clean data, reports, and charts, ignored by Git. |
 | `scripts/downloaders/` | Market-data download commands. |
 | `scripts/cleaners/` | Investable-universe preparation command. |
-| `ldi_engine.py` | Official monthly integer cash-flow-matching optimizer. |
+| `core/ldi_engine.py` | Official monthly integer cash-flow-matching optimizer. |
 | `main.py` | Canonical workflow: prepares inputs, solves, and exports the result. |
-| `pipeline.py` | Refreshes all market inputs for the official workflow. |
-| `bond_cash_flow_creator.py` | Cash-flow generation and yield validation. |
-| `future_liabilities.py` | Liability configuration and aggregation. |
-| `plots.py` | PNG dashboard generation for the monthly LDI result. |
-| `utils.py` | Shared project paths, mandate defaults, and numerical helpers. |
+| `core/pipeline.py` | Refreshes all market inputs for the official workflow. |
+| `core/bond_cash_flow_creator.py` | Cash-flow generation and yield validation. |
+| `core/future_liabilities.py` | Liability configuration and aggregation. |
+| `core/inflation_scenarios.py` | Builds coherent FOI/HICP scenario paths. |
+| `core/inflation_linked_cashflows.py` | Contractual FOI/HICP scenario cash flows for BTP€i, BTP Italia, and BTP Italia Sì. |
+| `core/plots.py` | PNG dashboard generation for the monthly LDI result. |
+| `core/utils.py` | Shared project paths, mandate defaults, and numerical helpers. |
 | `tests/` | Fast, deterministic regression tests. |
 
 ## Requirements
@@ -76,7 +80,7 @@ silently reuse an existing market-data cache. The result is written to
 Generate the dashboard after a successful optimization:
 
 ```powershell
-python plots.py
+python -m core.plots
 ```
 
 The command also creates `data/processed/plots/04_linkedin_summary.png`, a
@@ -98,7 +102,7 @@ Liability JSON --> Schedule --+--> Monthly LDI engine --> Excel audit trail
 ECB curve ------------------------> PV and duration utilities
 ```
 
-The PNG dashboard is a separate, reproducible step run with `python plots.py`.
+The PNG dashboard is a separate, reproducible step run with `python -m core.plots`.
 
 ## Configure liabilities
 
@@ -109,12 +113,24 @@ requires `name`, `category`, `start_date`, `end_date`, `initial_cashflow`,
 `frequency` supports `annual` and `every_n_years`; the latter requires
 `interval_years`.
 
+## Inflation scenario
+
+`ACTIVE_INFLATION_SCENARIO` in [core/utils.py](core/utils.py) selects the default path:
+`low_inflation`, `baseline`, `high_inflation`, or `severe_inflation`. The same
+selection drives HICP-indexed BTP€i, FOI-indexed BTP Italia instruments, and
+liabilities carrying an `indexation` block. Prices and valuation dates always
+remain those in the cleaned bond-market parquet.
+
+The refresh pipeline downloads FOI/HICP, rebuilds the coherent scenarios through
+the later of the liability horizon and the longest inflation-linked maturity, and
+then creates native `isincode/date/l1/l2/l3` flows for the optimizer.
+
 ## Use the optimizer in Python
 
 ```python
 import pandas as pd
 
-from ldi_engine import load_bond_inputs, optimize_cashflow_matching
+from core.ldi_engine import load_bond_inputs, optimize_cashflow_matching
 
 target = pd.DataFrame(
     {"date": ["2030-01-01", "2031-01-01"], "cashflow": [10_000, 10_000]}
@@ -143,7 +159,7 @@ funding requirement is shown in `uncovered_eur`; it is never hidden.
 | Maximum positions | 30 |
 
 Use the public function arguments—not source edits—to model a different
-mandate. See [ldi_engine.py](ldi_engine.py) for the complete signature.
+mandate. See [core/ldi_engine.py](core/ldi_engine.py) for the complete signature.
 
 The current strategy buys bonds and holds them to redemption. Purchase
 commissions are therefore charged immediately. A redemption is not treated as
@@ -155,22 +171,26 @@ introduced.
 ```powershell
 python scripts/downloaders/bond_downloader.py
 python scripts/downloaders/yield_curve_downloader.py
+python scripts/downloaders/download_foi_xt_it.py
+python scripts/downloaders/download_hicp_xt_ea.py
 python scripts/cleaners/bond_cleaner.py
-python bond_cash_flow_creator.py
+python -m core.inflation_scenarios
+python -m core.bond_cash_flow_creator
 ```
 
 The full `main.py` refresh also updates the ECB curve used by the present-value
-utilities in `future_liabilities.py`.
+utilities in `core/future_liabilities.py`.
 
 ## Reproducible data policy
 
 A fresh clone does not need any ignored data file. `python main.py` downloads
 the bond and ECB inputs, rebuilds every Parquet dataset, solves the portfolio,
-and recreates the Excel report. `python plots.py` then recreates the PNG charts.
+and recreates the Excel report. `python -m core.plots` then recreates the PNG charts.
 
 The versioned inputs required to reproduce the project are the Python source,
-dependency files, and `data/config/liabilities.json`. Files under `data/raw/`
-and generated files under `data/processed/` must remain unversioned.
+dependency files, `data/config/`, and the two official rebased index histories
+under `data/`. Files under `data/raw/` and generated files under
+`data/processed/` must remain unversioned.
 
 ## Development
 

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-CONFIG_PATH = Path(__file__).resolve().parent / "data" / "config" / "inflation_linked_bonds.json"
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "config" / "inflation_linked_bonds.json"
 
 
 def load_inflation_linked_bond_types(path=CONFIG_PATH):

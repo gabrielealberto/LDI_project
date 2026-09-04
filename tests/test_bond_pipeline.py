@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from bond_cash_flow_creator import create_all_cashflows, gross_ytm
+from core.bond_cash_flow_creator import create_all_cashflows, gross_ytm
 from scripts.cleaners.bond_cleaner import clean_fd, liquid_bonds
 
 

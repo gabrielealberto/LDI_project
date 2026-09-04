@@ -11,7 +11,10 @@ import numpy as np
 import pandas as pd
 import requests
 
-ISTAT_DATA_ROOT = "https://esploradati.istat.it/SDMXWS/rest/v2/data/dataflow/IT1"
+# ISTAT's production SDMX endpoint.  The advertised ``/rest/v2/data`` route
+# is not implemented consistently, while this v1-compatible endpoint is the
+# one published by ISTAT for data access.
+ISTAT_DATA_ROOT = "https://esploradati.istat.it/SDMXWS/rest/data"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
 TIMEOUT = 30
@@ -32,7 +35,11 @@ SPECS = (
 def download_sdmx_data(flow: str, key: str) -> dict[str, Any]:
     """Download a single, fully constrained official ISTAT SDMX series."""
     try:
-        response = requests.get(f"{ISTAT_DATA_ROOT}/{flow}/1.0/{key}", timeout=TIMEOUT)
+        response = requests.get(
+            f"{ISTAT_DATA_ROOT}/{flow}/{key}",
+            params={"format": "jsondata"},
+            timeout=TIMEOUT,
+        )
         response.raise_for_status()
         return response.json()
     except requests.RequestException as error:

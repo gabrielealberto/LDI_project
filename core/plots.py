@@ -8,9 +8,9 @@ from matplotlib.ticker import FuncFormatter, PercentFormatter
 import numpy as np
 import pandas as pd
 
-from future_liabilities import portfolio as liability_portfolio
-from ldi_engine import load_bond_inputs, optimize_cashflow_matching
-from utils import MAX_ISSUER_WEIGHT, PROCESSED_DIR
+from .future_liabilities import scenario_cashflows
+from .ldi_engine import load_bond_inputs, optimize_cashflow_matching
+from .utils import MAX_ISSUER_WEIGHT, PROCESSED_DIR
 
 
 PLOTS_DIR = PROCESSED_DIR / "plots"
@@ -25,7 +25,9 @@ COLORS = {
     "canvas": "#F3F3F0",
     "white": "#FFFFFF",
 }
-SOURCE_NOTE = "Source: LDI engine output. Monetary values in EUR; calculations use monthly cash flows."
+SOURCE_NOTE = (
+    "Source: LDI engine output. Monetary values in EUR; calculations use monthly cash flows."
+)
 
 
 def _save(figure, output_dir, name):
@@ -49,9 +51,7 @@ def _new_figure(*, figsize=(13, 8), height_ratios=(1.5, 1)):
 
 
 def _figure_header(figure, title, subtitle, insight):
-    figure.text(
-        0.09, 0.955, title, va="top", color=COLORS["ink"], fontsize=17, fontweight="bold"
-    )
+    figure.text(0.09, 0.955, title, va="top", color=COLORS["ink"], fontsize=17, fontweight="bold")
     figure.text(0.09, 0.915, subtitle, va="top", color=COLORS["muted"], fontsize=9.5)
     figure.text(
         0.09,
@@ -86,9 +86,7 @@ def _monthly_cashflows(result):
             monthly[column] = 0.0
     if "net_cashflow_eur" not in monthly:
         monthly["net_cashflow_eur"] = (
-            monthly["asset_cashflow_eur"]
-            + monthly["external_cash_eur"]
-            - monthly["liability_eur"]
+            monthly["asset_cashflow_eur"] + monthly["external_cash_eur"] - monthly["liability_eur"]
         )
     if "cash_balance_eur" not in monthly:
         monthly["cash_balance_eur"] = monthly["net_cashflow_eur"].cumsum()
@@ -239,7 +237,11 @@ def plot_cash_account(result, output_dir):
     bottom.set_ylabel("Assets less liabilities")
     bottom.yaxis.set_major_formatter(FuncFormatter(_compact_axis_eur))
     bottom.text(
-        0, 1.02, "B  Monthly organic surplus / shortfall", transform=bottom.transAxes, fontweight="bold"
+        0,
+        1.02,
+        "B  Monthly organic surplus / shortfall",
+        transform=bottom.transAxes,
+        fontweight="bold",
     )
     _style_axes(top, bottom)
     return _save(figure, output_dir, "01_cash_account.png")
@@ -253,7 +255,9 @@ def plot_coverage(result, output_dir):
     cumulative_funding = cumulative_assets + monthly["external_cash_eur"].cumsum()
     surplus = cumulative_funding - cumulative_liabilities
     total_liabilities = float(cumulative_liabilities.iloc[-1])
-    organic_ratio = float(cumulative_assets.iloc[-1] / total_liabilities) if total_liabilities else np.nan
+    organic_ratio = (
+        float(cumulative_assets.iloc[-1] / total_liabilities) if total_liabilities else np.nan
+    )
     trough_index = _tightest_payment_index(monthly, surplus)
     trough = float(surplus.loc[trough_index])
 
@@ -266,10 +270,18 @@ def plot_coverage(result, output_dir):
         f"Organic horizon coverage: {ratio_text}; tightest post-payment position: {_compact_eur(trough)}.",
     )
     top.plot(
-        monthly["date"], cumulative_liabilities, color=COLORS["amber"], linewidth=2, label="Liabilities"
+        monthly["date"],
+        cumulative_liabilities,
+        color=COLORS["amber"],
+        linewidth=2,
+        label="Liabilities",
     )
     top.plot(
-        monthly["date"], cumulative_assets, color=COLORS["blue"], linewidth=2.2, label="Bond cash flows"
+        monthly["date"],
+        cumulative_assets,
+        color=COLORS["blue"],
+        linewidth=2.2,
+        label="Bond cash flows",
     )
     top.fill_between(
         monthly["date"],
@@ -292,7 +304,9 @@ def plot_coverage(result, output_dir):
     top.set_ylabel("Cumulative amount")
     top.yaxis.set_major_formatter(FuncFormatter(_compact_axis_eur))
     top.legend(frameon=False, ncol=2, loc="upper left", fontsize=8.5)
-    top.text(0, 1.02, "A  Organic cash-flow accumulation", transform=top.transAxes, fontweight="bold")
+    top.text(
+        0, 1.02, "A  Organic cash-flow accumulation", transform=top.transAxes, fontweight="bold"
+    )
 
     bottom.plot(monthly["date"], surplus, color=COLORS["teal"], linewidth=2)
     bottom.fill_between(
@@ -420,16 +434,30 @@ def plot_linkedin_summary(result, output_dir):
     for spine in header.spines.values():
         spine.set_visible(False)
     header.text(
-        0.035, 0.72, "LIABILITY-DRIVEN INVESTING", color="#9ABBB6", fontsize=9,
-        fontweight="bold", transform=header.transAxes
+        0.035,
+        0.72,
+        "LIABILITY-DRIVEN INVESTING",
+        color="#9ABBB6",
+        fontsize=9,
+        fontweight="bold",
+        transform=header.transAxes,
     )
     header.text(
-        0.035, 0.38, "Optimized bond portfolio", color=COLORS["white"], fontsize=25,
-        fontweight="bold", transform=header.transAxes
+        0.035,
+        0.38,
+        "Optimized bond portfolio",
+        color=COLORS["white"],
+        fontsize=25,
+        fontweight="bold",
+        transform=header.transAxes,
     )
     header.text(
-        0.035, 0.12, "Monthly cash-flow matching under investable portfolio constraints",
-        color="#D9E0E3", fontsize=10, transform=header.transAxes
+        0.035,
+        0.12,
+        "Monthly cash-flow matching under investable portfolio constraints",
+        color="#D9E0E3",
+        fontsize=10,
+        transform=header.transAxes,
     )
 
     return_text = "N/A" if pd.isna(annualized_return) else f"{annualized_return:.2%}"
@@ -449,17 +477,25 @@ def plot_linkedin_summary(result, output_dir):
     cumulative_assets = monthly["asset_cashflow_eur"].cumsum()
     cumulative_liabilities = monthly["liability_eur"].cumsum()
     cashflow_axis.plot(
-        monthly["date"], cumulative_assets, color=COLORS["blue"], linewidth=2.8,
-        label="Bond cash flows"
+        monthly["date"],
+        cumulative_assets,
+        color=COLORS["blue"],
+        linewidth=2.8,
+        label="Bond cash flows",
     )
     cashflow_axis.plot(
-        monthly["date"], cumulative_liabilities, color=COLORS["amber"], linewidth=2.4,
-        label="Liabilities"
+        monthly["date"],
+        cumulative_liabilities,
+        color=COLORS["amber"],
+        linewidth=2.4,
+        label="Liabilities",
     )
     cashflow_axis.fill_between(
         monthly["date"], cumulative_liabilities, cumulative_assets, color=COLORS["teal"], alpha=0.10
     )
-    cashflow_axis.set_title("Cumulative matching", loc="left", color=COLORS["ink"], fontweight="bold")
+    cashflow_axis.set_title(
+        "Cumulative matching", loc="left", color=COLORS["ink"], fontweight="bold"
+    )
     cashflow_axis.set_ylabel("EUR", color=COLORS["muted"])
     cashflow_axis.yaxis.set_major_formatter(FuncFormatter(_compact_axis_eur))
     cashflow_axis.legend(loc="upper left", frameon=False, ncol=2, fontsize=8)
@@ -469,8 +505,13 @@ def plot_linkedin_summary(result, output_dir):
     issuer_axis.set_title("Issuer allocation", loc="left", color=COLORS["ink"], fontweight="bold")
     if portfolio.empty:
         issuer_axis.text(
-            0.5, 0.5, "No positions selected", ha="center", va="center",
-            color=COLORS["muted"], transform=issuer_axis.transAxes
+            0.5,
+            0.5,
+            "No positions selected",
+            ha="center",
+            va="center",
+            color=COLORS["muted"],
+            transform=issuer_axis.transAxes,
         )
         issuer_axis.set_axis_off()
     else:
@@ -488,8 +529,12 @@ def plot_linkedin_summary(result, output_dir):
         issuer_axis.set_xlabel("Share of investment", color=COLORS["muted"], fontsize=8)
         issuer_axis.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.0f}%"))
         issuer_axis.bar_label(
-            bars, labels=[f"{value:.1f}%" for value in weights], padding=4,
-            color=COLORS["ink"], fontsize=8, fontweight="bold"
+            bars,
+            labels=[f"{value:.1f}%" for value in weights],
+            padding=4,
+            color=COLORS["ink"],
+            fontsize=8,
+            fontweight="bold",
         )
         _style_axes(issuer_axis, grid_axis="x")
 
@@ -497,9 +542,14 @@ def plot_linkedin_summary(result, output_dir):
     footer.set_axis_off()
     footer.add_patch(
         FancyBboxPatch(
-            (0, 0.12), 1, 0.82, boxstyle="round,pad=0.015,rounding_size=0.025",
-            facecolor=COLORS["white"], edgecolor=COLORS["grid"], linewidth=1,
-            transform=footer.transAxes
+            (0, 0.12),
+            1,
+            0.82,
+            boxstyle="round,pad=0.015,rounding_size=0.025",
+            facecolor=COLORS["white"],
+            edgecolor=COLORS["grid"],
+            linewidth=1,
+            transform=footer.transAxes,
         )
     )
     highlights = [
@@ -510,16 +560,31 @@ def plot_linkedin_summary(result, output_dir):
     for index, (label, detail) in enumerate(highlights):
         x_position = 0.035 + index * 0.325
         footer.text(
-            x_position, 0.68, label, color=COLORS["teal"], fontsize=7.5,
-            fontweight="bold", transform=footer.transAxes
+            x_position,
+            0.68,
+            label,
+            color=COLORS["teal"],
+            fontsize=7.5,
+            fontweight="bold",
+            transform=footer.transAxes,
         )
         footer.text(
-            x_position, 0.43, detail, color=COLORS["ink"], fontsize=9,
-            fontweight="semibold", transform=footer.transAxes
+            x_position,
+            0.43,
+            detail,
+            color=COLORS["ink"],
+            fontsize=9,
+            fontweight="semibold",
+            transform=footer.transAxes,
         )
     footer.text(
-        0.5, -0.02, "Python  |  Mixed-Integer Optimization  |  Fixed Income",
-        ha="center", color=COLORS["muted"], fontsize=8, transform=footer.transAxes
+        0.5,
+        -0.02,
+        "Python  |  Mixed-Integer Optimization  |  Fixed Income",
+        ha="center",
+        color=COLORS["muted"],
+        fontsize=8,
+        transform=footer.transAxes,
     )
     path = Path(output_dir) / "04_linkedin_summary.png"
     figure.savefig(path, dpi=180, facecolor=figure.get_facecolor())
@@ -539,7 +604,7 @@ def plot_portfolio(result, output_dir=PLOTS_DIR):
 
 
 if __name__ == "__main__":
-    dates, cashflows = liability_portfolio.merge_liabilities()
+    dates, cashflows = scenario_cashflows()
     matrix, bonds = load_bond_inputs()
     result = optimize_cashflow_matching(
         pd.DataFrame({"date": dates, "cashflow": cashflows}), matrix, bonds

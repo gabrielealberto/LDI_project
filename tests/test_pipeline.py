@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pipeline
+import core.pipeline as pipeline
 
 
 class PipelineRefreshTests(unittest.TestCase):
@@ -11,6 +11,7 @@ class PipelineRefreshTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
+        (root / "data").mkdir()
         self.raw_fd = root / "bonds_fd.parquet"
         self.raw_bi = root / "bonds_bi.parquet"
         self.curve = root / "ecb_svensson.parquet"
@@ -18,6 +19,9 @@ class PipelineRefreshTests(unittest.TestCase):
         self.clean_bi = root / "bi_clean.parquet"
         self.cashflows = root / "bond_cashflows.parquet"
         self.matrix = root / "bond_cashflow_matrix.parquet"
+        self.foi = root / "data" / "foi_xt_it.parquet"
+        self.hicp = root / "data" / "hicp_xt_ea.parquet"
+        self.scenarios = root / "inflation_scenarios.parquet"
 
     def _patch_paths(self):
         return patch.multiple(
@@ -29,6 +33,7 @@ class PipelineRefreshTests(unittest.TestCase):
         )
 
     def _run_with_mocks(self):
+        root = Path(self.directory.name)
         actions = []
         bond_downloader = Mock()
         bond_downloader.run.side_effect = lambda: (
@@ -55,6 +60,11 @@ class PipelineRefreshTests(unittest.TestCase):
                 self.matrix.touch(),
             )
         )
+        foi_downloader = Mock(side_effect=lambda: (actions.append("foi"), self.foi.touch()))
+        hicp_downloader = Mock(side_effect=lambda: (actions.append("hicp"), self.hicp.touch()))
+        scenario_builder = Mock(
+            side_effect=lambda: (actions.append("scenarios"), self.scenarios.touch())
+        )
 
         with (
             patch.multiple(
@@ -62,11 +72,16 @@ class PipelineRefreshTests(unittest.TestCase):
                 CASHFLOWS_PATH=self.cashflows,
                 BOND_CASHFLOW_MATRIX_PATH=self.matrix,
                 CURVE_PATH=self.curve,
+                INFLATION_SCENARIOS_PATH=self.scenarios,
+                PROJECT_ROOT=root,
             ),
             self._patch_paths(),
             patch.object(pipeline, "BondDownloader", return_value=bond_downloader),
             patch.object(pipeline, "ECBDownloader", return_value=curve_downloader),
             patch.object(pipeline.bond_cleaner, "run", cleaner),
+            patch.object(pipeline, "download_foi", foi_downloader),
+            patch.object(pipeline, "download_hicp", hicp_downloader),
+            patch.object(pipeline, "build_inflation_scenarios", scenario_builder),
             patch.object(pipeline, "build_cashflow_outputs", cashflow_builder),
         ):
             completed = pipeline.refresh_ldi_inputs()
@@ -76,10 +91,19 @@ class PipelineRefreshTests(unittest.TestCase):
     def test_refreshes_every_stage_in_dependency_order(self):
         actions, completed = self._run_with_mocks()
 
-        self.assertEqual(actions, ["bonds", "curve", "clean", "cashflows"])
+        self.assertEqual(
+            actions, ["bonds", "curve", "clean", "foi", "hicp", "scenarios", "cashflows"]
+        )
         self.assertEqual(
             completed,
-            ["bond data", "yield curve", "investable universe", "bond cash flows"],
+            [
+                "bond data",
+                "yield curve",
+                "investable universe",
+                "inflation indices",
+                "inflation scenarios",
+                "bond cash flows",
+            ],
         )
 
     def test_refreshes_even_when_all_outputs_already_exist(self):
@@ -91,12 +115,17 @@ class PipelineRefreshTests(unittest.TestCase):
             self.clean_bi,
             self.cashflows,
             self.matrix,
+            self.foi,
+            self.hicp,
+            self.scenarios,
         ):
             path.touch()
 
         actions, _ = self._run_with_mocks()
 
-        self.assertEqual(actions, ["bonds", "curve", "clean", "cashflows"])
+        self.assertEqual(
+            actions, ["bonds", "curve", "clean", "foi", "hicp", "scenarios", "cashflows"]
+        )
 
     def test_backward_compatible_entry_point_performs_full_refresh(self):
         with patch.object(pipeline, "refresh_ldi_inputs", return_value=["refreshed"]) as refresh:

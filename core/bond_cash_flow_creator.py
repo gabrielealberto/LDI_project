@@ -3,8 +3,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from inflation_linked_bonds import load_inflation_linked_bond_types
-from utils import (
+from .inflation_linked_bonds import load_inflation_linked_bond_types
+from .inflation_linked_cashflows import build_inflation_linked_cashflows
+from .utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
     BI_CLEAN_PATH,
@@ -188,7 +189,9 @@ def load_cashflow_overrides(paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLO
     """Load hand-validated contractual cash flows in the native output schema."""
     if isinstance(paths, (str, Path)):
         paths = (paths,)
-    overrides = pd.concat([pd.read_json(path, convert_dates=["date"]) for path in paths], ignore_index=True)
+    overrides = pd.concat(
+        [pd.read_json(path, convert_dates=["date"]) for path in paths], ignore_index=True
+    )
     required = {"isincode", "date", "l1", "l2", "l3"}
     missing = required - set(overrides.columns)
     if missing:
@@ -211,7 +214,9 @@ def apply_cashflow_overrides(cashflows, overrides, bonds):
     reference_dates["referencedate"] = pd.to_datetime(
         reference_dates["referencedate"], dayfirst=True
     )
-    effective_overrides = overrides.merge(reference_dates, on="isincode", how="left", validate="many_to_one")
+    effective_overrides = overrides.merge(
+        reference_dates, on="isincode", how="left", validate="many_to_one"
+    )
     effective_overrides = effective_overrides.loc[
         effective_overrides["date"] > effective_overrides["referencedate"]
     ].drop(columns="referencedate")
@@ -235,7 +240,7 @@ def monthly_cashflow_matrix(cashflows):
     )
 
 
-def build_cashflow_outputs():
+def build_cashflow_outputs(scenario=None):
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
     all_bonds = merge_clean_bonds(fd_clean, bi_clean)
@@ -243,7 +248,9 @@ def build_cashflow_outputs():
     override_isins = set(overrides["isincode"])
     missing_override_bonds = override_isins - set(all_bonds["isincode"])
     if missing_override_bonds:
-        raise ValueError(f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}")
+        raise ValueError(
+            f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}"
+        )
 
     bonds, comparison = validated_bonds(all_bonds)
     # These structured bonds are validated against their explicit schedules,
@@ -255,12 +262,25 @@ def build_cashflow_outputs():
         .reset_index(drop=True)
     )
     inflation_linked_isins = set(load_inflation_linked_bond_types())
-    excluded_inflation_linked = bonds.loc[
-        bonds["isincode"].isin(inflation_linked_isins), "isincode"
-    ].sort_values().tolist()
-    bonds = bonds.loc[~bonds["isincode"].isin(inflation_linked_isins)].reset_index(drop=True)
-    cashflows = create_all_cashflows(bonds)
-    cashflows = apply_cashflow_overrides(cashflows, overrides, bonds)
+    inflation_linked_bonds = all_bonds.loc[
+        all_bonds["isincode"].isin(inflation_linked_isins)
+    ].reset_index(drop=True)
+    missing_inflation_linked = inflation_linked_isins - set(inflation_linked_bonds["isincode"])
+    if missing_inflation_linked:
+        raise ValueError(
+            "Inflation-linked configuration ISINs are absent from the clean universe: "
+            f"{sorted(missing_inflation_linked)}"
+        )
+    nominal_bonds = bonds.loc[~bonds["isincode"].isin(inflation_linked_isins)].reset_index(
+        drop=True
+    )
+    cashflows = create_all_cashflows(nominal_bonds)
+    cashflows = apply_cashflow_overrides(cashflows, overrides, nominal_bonds)
+    inflation_cashflows = build_inflation_linked_cashflows(
+        inflation_linked_bonds, **({} if scenario is None else {"scenario": scenario})
+    )
+    cashflows = pd.concat([cashflows, inflation_cashflows], ignore_index=True)
+    bonds = pd.concat([nominal_bonds, inflation_linked_bonds], ignore_index=True)
     matrix = monthly_cashflow_matrix(cashflows)
     cashflows.to_parquet(BOND_CASHFLOWS_PATH, engine="pyarrow", compression="snappy", index=False)
     matrix.to_parquet(BOND_CASHFLOW_MATRIX_PATH, engine="pyarrow", compression="snappy")
@@ -269,7 +289,7 @@ def build_cashflow_outputs():
         "comparison": comparison,
         "cashflows": cashflows,
         "matrix": matrix,
-        "excluded_inflation_linked": excluded_inflation_linked,
+        "inflation_linked_bonds": sorted(inflation_linked_isins),
     }
 
 
@@ -277,7 +297,7 @@ if __name__ == "__main__":
     result = build_cashflow_outputs()
 
     print(f"Validated bonds: {len(result['bonds'])}")
-    print(f"Excluded inflation-linked bonds: {len(result['excluded_inflation_linked'])}")
+    print(f"Included inflation-linked bonds: {len(result['inflation_linked_bonds'])}")
     print(f"cashflows: {result['cashflows'].shape}")
     print(f"matrix: {result['matrix'].shape}")
     print(f"Saved: {BOND_CASHFLOWS_PATH}")

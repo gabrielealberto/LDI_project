@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 CONFIG_DIR = PROJECT_ROOT / "data" / "config"
@@ -16,6 +16,13 @@ FD_CLEAN_PATH = PROCESSED_DIR / "fd_clean.parquet"
 BI_CLEAN_PATH = PROCESSED_DIR / "bi_clean.parquet"
 BONDS_PATH = FD_CLEAN_PATH
 CURVE_PATH = RAW_DIR / "ecb_svensson.parquet"
+INFLATION_SCENARIOS_PATH = PROCESSED_DIR / "inflation_scenarios.parquet"
+
+# The default coherent FOI/HICP path used by the LDI run.  Public entry points
+# also accept an explicit scenario argument so comparative runs do not require
+# mutating this module.
+# Choose one of: "low_inflation", "baseline", "high_inflation", "severe_inflation".
+ACTIVE_INFLATION_SCENARIO = "baseline"
 
 NOMINAL = 1_000
 MAX_NOMINAL_PER_BOND = 50_000

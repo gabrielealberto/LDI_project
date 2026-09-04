@@ -6,13 +6,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bond_cash_flow_creator import gross_ytm, load_clean_bonds, merge_clean_bonds
-from utils import NOMINAL, PROCESSED_DIR
+from core.bond_cash_flow_creator import gross_ytm, load_clean_bonds, merge_clean_bonds
+from core.utils import NOMINAL
 
 
 OUTPUT_PATH = Path("data/config/standard_cashflows.json")
-VALIDATION_PATH = PROCESSED_DIR / "standard_cashflow_validation.json"
-SOURCES_PATH = PROCESSED_DIR / "standard_cashflow_sources.json"
 # Source prices are rounded to cents and reported YTMs to two decimals; 3 bp
 # is required for the three short-dated fixed/zero-coupon instruments.
 YTM_TOLERANCE = 0.03
@@ -20,10 +18,20 @@ YTM_TOLERANCE = 0.03
 STANDARD_SOURCES = {
     isin: f"https://www.borsaitaliana.it/borsa/obbligazioni/mot/btp/scheda/{isin}-MOTX.html"
     for isin in [
-        "IT0005433690", "IT0005671273", "IT0005676504", "IT0005689960",
-        "IT0005689994", "IT0005692410", "IT0005694630", "IT0005704868",
-        "IT0005706285", "IT0005707614", "IT0005716839", "IT0005722845",
-        "IT0005729733", "IT0005729931",
+        "IT0005433690",
+        "IT0005671273",
+        "IT0005676504",
+        "IT0005689960",
+        "IT0005689994",
+        "IT0005692410",
+        "IT0005694630",
+        "IT0005704868",
+        "IT0005706285",
+        "IT0005707614",
+        "IT0005716839",
+        "IT0005722845",
+        "IT0005729733",
+        "IT0005729931",
     ]
 } | {
     "BE0000351602": "https://www.debtagency.be/en/product/o-lo",
@@ -121,9 +129,6 @@ def build_and_validate():
 
 def main():
     schedules, validation = build_and_validate()
-    VALIDATION_PATH.parent.mkdir(parents=True, exist_ok=True)
-    VALIDATION_PATH.write_text(json.dumps(validation, indent=2), encoding="utf-8")
-    SOURCES_PATH.write_text(json.dumps(STANDARD_SOURCES, indent=2), encoding="utf-8")
     if not all(row["matches"] for row in validation):
         print(json.dumps(validation, indent=2))
         print("No standard cash-flow JSON was written because validation failed.")

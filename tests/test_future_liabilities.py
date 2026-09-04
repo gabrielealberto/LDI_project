@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from future_liabilities import Cf_engine, Liability, load_liabilities
+from core.future_liabilities import Cf_engine, Liability, load_liabilities
 
 
 class LiabilityConfigurationTests(unittest.TestCase):
