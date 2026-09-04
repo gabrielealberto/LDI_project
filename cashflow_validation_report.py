@@ -12,14 +12,22 @@ from bond_cash_flow_creator import (
     load_clean_bonds,
     merge_clean_bonds,
 )
+from inflation_linked_bonds import load_inflation_linked_bond_types
 from utils import NOMINAL, PROCESSED_DIR
 
 
 DEFAULT_OUTPUT_PATH = PROCESSED_DIR / "cashflow_validation_report.csv"
 
 
-def cashflow_structure(description):
+def cashflow_structure(isincode, description, inflation_linked_bond_types=None):
     """Classify cash-flow structures that need different validation models."""
+    inflation_linked_bond_types = (
+        load_inflation_linked_bond_types()
+        if inflation_linked_bond_types is None
+        else inflation_linked_bond_types
+    )
+    if str(isincode) in inflation_linked_bond_types:
+        return "inflation_linked"
     text = str(description).upper()
     if "BTPI" in text or "INFLATION" in text or "INDICIZZ" in text:
         return "inflation_linked"
@@ -63,6 +71,7 @@ def problematic_cashflow_bonds(tolerance=0.02):
     fd_clean, bi_clean = load_clean_bonds()
     bonds = merge_clean_bonds(fd_clean, bi_clean)
     comparison = compare_gross_ytm(bonds, tolerance=tolerance)
+    inflation_linked_bond_types = load_inflation_linked_bond_types()
     market = bonds.set_index("isincode")
     overrides = load_cashflow_overrides()
     for isincode, flows in overrides.groupby("isincode"):
@@ -71,19 +80,35 @@ def problematic_cashflow_bonds(tolerance=0.02):
         ytm_source = float(market.loc[isincode, "grossytm"])
         ytm_calculated = override_gross_ytm(flows, market.loc[isincode])
         difference = ytm_calculated - ytm_source
-        override_tolerance = 0.03 if cashflow_structure(market.loc[isincode, "description"]) == "standard" else tolerance
+        structure = cashflow_structure(
+            isincode, market.loc[isincode, "description"], inflation_linked_bond_types
+        )
+        override_tolerance = 0.03 if structure == "standard" else tolerance
         comparison.loc[comparison["isincode"].eq(isincode), [
             "grossytm_calc",
             "grossytm_diff",
             "is_equal",
         ]] = [ytm_calculated, difference, abs(difference) <= override_tolerance]
 
+    comparison["cashflow_structure"] = [
+        cashflow_structure(isincode, description, inflation_linked_bond_types)
+        for isincode, description in zip(comparison["isincode"], bonds["description"])
+    ]
+    # A fixed-coupon model cannot validate an inflation-linked payoff, even
+    # when its simplified YTM happens to match the upstream feed metric.
+    comparison.loc[comparison["cashflow_structure"].eq("inflation_linked"), "is_equal"] = False
+
     metadata_columns = [column for column in ["isincode", "description"] if column in bonds]
     rejected = comparison.loc[~comparison["is_equal"]].merge(
         bonds[metadata_columns], on="isincode", how="left", validate="one_to_one"
     )
-    rejected["reason"] = "gross_ytm_mismatch"
-    rejected["cashflow_structure"] = rejected["description"].map(cashflow_structure)
+    rejected["reason"] = rejected["cashflow_structure"].map(
+        lambda structure: (
+            "inflation_linked_requires_dynamic_model"
+            if structure == "inflation_linked"
+            else "gross_ytm_mismatch"
+        )
+    )
     rejected["tolerance_percentage_points"] = tolerance
     rejected["absolute_difference_percentage_points"] = rejected["grossytm_diff"].abs()
     rejected = rejected[

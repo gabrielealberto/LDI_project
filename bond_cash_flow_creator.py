@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from inflation_linked_bonds import load_inflation_linked_bond_types
 from utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
@@ -253,6 +254,11 @@ def build_cashflow_outputs():
         .drop_duplicates("isincode")
         .reset_index(drop=True)
     )
+    inflation_linked_isins = set(load_inflation_linked_bond_types())
+    excluded_inflation_linked = bonds.loc[
+        bonds["isincode"].isin(inflation_linked_isins), "isincode"
+    ].sort_values().tolist()
+    bonds = bonds.loc[~bonds["isincode"].isin(inflation_linked_isins)].reset_index(drop=True)
     cashflows = create_all_cashflows(bonds)
     cashflows = apply_cashflow_overrides(cashflows, overrides, bonds)
     matrix = monthly_cashflow_matrix(cashflows)
@@ -263,6 +269,7 @@ def build_cashflow_outputs():
         "comparison": comparison,
         "cashflows": cashflows,
         "matrix": matrix,
+        "excluded_inflation_linked": excluded_inflation_linked,
     }
 
 
@@ -270,6 +277,7 @@ if __name__ == "__main__":
     result = build_cashflow_outputs()
 
     print(f"Validated bonds: {len(result['bonds'])}")
+    print(f"Excluded inflation-linked bonds: {len(result['excluded_inflation_linked'])}")
     print(f"cashflows: {result['cashflows'].shape}")
     print(f"matrix: {result['matrix'].shape}")
     print(f"Saved: {BOND_CASHFLOWS_PATH}")
