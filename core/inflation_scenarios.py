@@ -116,20 +116,25 @@ def simulate_paths(
 def select_paths(dates: pd.DatetimeIndex, paths: np.ndarray) -> pd.DataFrame:
     """Select coherent low, baseline, high, and severe paths by terminal FOI."""
     terminal = paths[-1, :, 0]
-    quantiles = {
-        "low_inflation": 0.10,
-        "baseline": 0.50,
-        "high_inflation": 0.90,
-        "severe_inflation": 0.99,
+    # The selected path is a representative point of a probability band.
+    # Keeping both fields avoids presenting a percentile as if it were a
+    # discrete probability.  The bands exhaust the simulated distribution.
+    scenarios = {
+        "low_inflation": {"quantile": 0.10, "probability": 0.10},
+        "baseline": {"quantile": 0.50, "probability": 0.80},
+        "high_inflation": {"quantile": 0.90, "probability": 0.09},
+        "severe_inflation": {"quantile": 0.99, "probability": 0.01},
     }
     rows = []
-    for scenario, quantile in quantiles.items():
-        path_id = int(np.argmin(abs(terminal - np.quantile(terminal, quantile))))
+    for scenario, config in scenarios.items():
+        path_id = int(np.argmin(abs(terminal - np.quantile(terminal, config["quantile"]))))
         for date, values in zip(dates, paths[:, path_id], strict=True):
             rows.append(
                 {
                     "date": date,
                     "scenario": scenario,
+                    "selection_percentile": config["quantile"],
+                    "probability": config["probability"],
                     "foi_xt_it": values[0],
                     "hicp_xt_ea": values[1],
                 }

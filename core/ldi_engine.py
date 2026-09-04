@@ -575,11 +575,11 @@ def print_purchase_plan(result):
         )
 
 
-def export_ldi_excel(result, output_path=OUTPUT_PATH):
+def export_ldi_excel(result, output_path=OUTPUT_PATH, scenario_analysis=None):
     """Export the presentation-ready client report workbook."""
     from .client_excel_report import export_client_excel_report
 
-    return export_client_excel_report(result, output_path)
+    return export_client_excel_report(result, output_path, scenario_analysis=scenario_analysis)
 
 
 def export_ldi_excel_legacy(result, output_path=OUTPUT_PATH):
@@ -592,13 +592,15 @@ def export_ldi_excel_legacy(result, output_path=OUTPUT_PATH):
 def main():
     """Run the monthly, basic LDI workflow from locally prepared inputs."""
     from .future_liabilities import scenario_cashflows
+    from .scenario_simulation import run_scenario_analysis
 
     dates, cashflows = scenario_cashflows()
     target = pd.DataFrame({"date": dates, "cashflow": cashflows})
     matrix, bonds = load_bond_inputs()
     result = optimize_cashflow_matching(target, matrix, bonds)
+    scenario_analysis = run_scenario_analysis(result, matrix, bonds)
     print_purchase_plan(result)
-    print(f"Excel exported: {export_ldi_excel(result)}")
+    print(f"Excel exported: {export_ldi_excel(result, scenario_analysis=scenario_analysis)}")
 
 
 if __name__ == "__main__":

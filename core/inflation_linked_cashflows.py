@@ -291,13 +291,15 @@ def build_inflation_linked_cashflows(
     scenario: str = ACTIVE_INFLATION_SCENARIO,
     provider: ScenarioIndexProvider | None = None,
     terms_path: Path = CONFIG_PATH,
+    require_all_terms: bool = True,
 ) -> pd.DataFrame:
     """Return selected-scenario cash flows in the same schema as nominal bonds."""
     terms = load_inflation_linked_terms(terms_path)
     market = bonds.loc[bonds["isincode"].astype(str).isin(terms)].copy()
     missing = sorted(set(terms) - set(market["isincode"].astype(str)))
-    if missing:
+    if missing and require_all_terms:
         raise ValueError(f"Inflation-linked ISINs absent from clean market universe: {missing}")
+    terms = {isin: terms[isin] for isin in market["isincode"].astype(str) if isin in terms}
     provider = provider or load_selected_index_provider(scenario)
     rows = []
     for row in market.itertuples(index=False):
