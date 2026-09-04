@@ -25,12 +25,13 @@ from utils import (
     MAX_POSITIONS,
     NOMINAL,
     PROCESSED_DIR,
+    TERMINAL_CAPITAL_RATIO,
     after_tax_cashflow_values,
     optional_numeric as _optional_numeric,
 )
 
 OUTPUT_PATH = PROCESSED_DIR / "ldi_optimization.xlsx"
-MIP_OPTIONS = {"time_limit": 60, "mip_rel_gap": 0.0}
+MIP_OPTIONS = {"time_limit": 600, "mip_rel_gap": 0.01}
 
 
 def after_tax_cashflow_matrix(cashflows, coupon_tax_rate=COUPON_TAX_RATE):
@@ -123,6 +124,7 @@ def optimize_cashflow_matching(
     max_issuer_weight=MAX_ISSUER_WEIGHT,
     max_positions=MAX_POSITIONS,
     prefer_short_maturity=True,
+    terminal_capital_ratio=TERMINAL_CAPITAL_RATIO,
 ):
     """Return integer bond lots, portfolio cash flows and the monthly gap.
 
@@ -206,6 +208,8 @@ def optimize_cashflow_matching(
         raise ValueError("max_issuer_weight must be between 0 and 1.")
     if int(max_positions) != max_positions or max_positions < 0:
         raise ValueError("max_positions must be a non-negative integer.")
+    if terminal_capital_ratio < 0:
+        raise ValueError("terminal_capital_ratio must be non-negative.")
 
     if {"redemptiondate", "referencedate"}.issubset(metadata.columns):
         redemption = pd.to_datetime(metadata["redemptiondate"], dayfirst=True)
@@ -349,6 +353,27 @@ def optimize_cashflow_matching(
                 )
             )
 
+    if terminal_capital_ratio > 0:
+        # Retain terminal cash from the portfolio itself, excluding any external funding.
+        terminal_asset_cashflows = cashflows.sum(axis=0)[segment_bonds]
+        terminal_constraint = hstack(
+            [
+                csr_matrix(
+                    (terminal_asset_cashflows - terminal_capital_ratio * segment_lot_costs)
+                    .reshape(1, -1)
+                ),
+                csr_matrix((-terminal_capital_ratio * segment_fixed_fees).reshape(1, -1)),
+                csr_matrix((1, n_months)),
+            ]
+        )
+        constraints.append(
+            LinearConstraint(
+                terminal_constraint,
+                float(target.sum()),
+                np.inf,
+            )
+        )
+
     integrality = np.concatenate([np.ones(2 * n_segments), np.zeros(n_months)])
     bounds = Bounds(
         np.zeros(2 * n_segments + n_months),
@@ -440,6 +465,9 @@ def optimize_cashflow_matching(
         "max_issuer_weight": max_issuer_weight,
         "max_positions": max_positions,
         "prefer_short_maturity": prefer_short_maturity,
+        "terminal_capital_ratio": terminal_capital_ratio,
+        "terminal_capital_required_eur": float(terminal_capital_ratio * total_cost),
+        "terminal_portfolio_cash_eur": float(full_assets.sum() - full_target.sum()),
         "weighted_average_maturity_years": (
             np.average(portfolio["maturity_years"], weights=portfolio["cost_eur"])
             if not portfolio.empty
@@ -475,6 +503,12 @@ def print_purchase_plan(result):
         else "No maturity preference"
     )
     print(f"Residual shortfall: EUR {result['uncovered_eur']:,.2f}")
+    terminal_capital = result["terminal_portfolio_cash_eur"]
+    terminal_capital_ratio = terminal_capital / total_cost if total_cost else 0.0
+    print(
+        f"Terminal capital: EUR {terminal_capital:,.2f} "
+        f"({terminal_capital_ratio:.2%} of initial capital)"
+    )
     print(
         f"Eligible universe: {result['eligible_bonds']} bonds | "
         f"Certified MIP gap: {result['solver_mip_gap']:.6%}"

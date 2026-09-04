@@ -1,11 +1,22 @@
 [
   {
-    "name": "Pension",
-    "category": "pension",
-    "start_date": "2037-01-01",
-    "end_date": "2053-01-01",
-    "initial_cashflow": 9000,
+    "name": "Annual liability 2028-2042",
+    "category": "liability",
+    "start_date": "2028-01-01",
+    "end_date": "2042-01-01",
+    "initial_cashflow": 18000,
     "frequency": "annual",
-    "inflation_rate": 0.025
+    "inflation_rate": 0.025,
+    "probability": 1
+  },
+  {
+    "name": "Annual liability 2028-2046",
+    "category": "liability",
+    "start_date": "2028-01-01",
+    "end_date": "2046-01-01",
+    "initial_cashflow": 18000,
+    "frequency": "annual",
+    "inflation_rate": 0.025,
+    "probability": 1
   }
 ]

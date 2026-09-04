@@ -1,0 +1,312 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[a4paper,top=15mm,bottom=16mm,left=17mm,right=17mm,headheight=12pt]{geometry}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{navy}{HTML}{182633}
+\definecolor{blue}{HTML}{315A7D}
+\definecolor{teal}{HTML}{4F7C78}
+\definecolor{gold}{HTML}{B38A4A}
+\definecolor{red}{HTML}{9E5148}
+\definecolor{slate}{HTML}{65717C}
+\definecolor{light}{HTML}{F3F3F0}
+\definecolor{line}{HTML}{D8DEE1}
+
+\hypersetup{
+  pdftitle={LDI Portfolio Engine -- Project Report},
+  pdfauthor={LDI Portfolio Engine},
+  pdfsubject={Bond cash-flow matching with mixed-integer optimization},
+  pdfkeywords={LDI, fixed income, cash-flow matching, Python, MILP}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{slate}LDI Portfolio Engine}
+\fancyhead[R]{\small\color{slate}Project report}
+\fancyfoot[L]{\small\color{slate}Market data: August 19, 2026}
+\fancyfoot[R]{\small\color{slate}\thepage/6}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\titleformat{\section}{\Large\bfseries\color{navy}}{}{0pt}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{blue}}{}{0pt}{}
+\titlespacing*{\section}{0pt}{0pt}{5pt}
+\titlespacing*{\subsection}{0pt}{7pt}{3pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist[itemize]{leftmargin=5mm,itemsep=1.5pt,topsep=2pt}
+\sisetup{group-separator={,},output-decimal-marker={.},group-minimum-digits=4}
+\newcommand{\EUR}[1]{\mbox{\texteuro\,\num{#1}}}
+\newcommand{\source}[1]{\par\vspace{1mm}{\scriptsize\color{slate}Source: #1}}
+\newcommand{\pill}[1]{\colorbox{light}{\strut\hspace{2mm}\textcolor{navy}{\bfseries #1}\hspace{2mm}}}
+
+\begin{document}
+
+% -----------------------------------------------------------------------------
+% PAGINA 1 -- COPERTINA
+% -----------------------------------------------------------------------------
+\thispagestyle{empty}
+\vspace*{3mm}
+{\color{teal}\rule{\textwidth}{2.2pt}}\\[7mm]
+{\fontsize{28}{32}\selectfont\bfseries\color{navy}LDI Portfolio Engine}\par
+\vspace{2mm}
+{\Large\color{blue}From future liabilities to an investable bond portfolio}\par
+\vspace{5mm}
+{\large\color{slate}Technical project report \;|\; Python, Fixed Income and Mixed-Integer Optimization}\par
+
+\vspace{20mm}
+{\fontsize{18}{23}\selectfont\bfseries\color{navy}
+An auditable framework for matching long-dated liabilities with investable bond cash flows.\par}
+\vspace{7mm}
+{\large\color{slate}
+The engine connects market data, security-level cash-flow modelling and constrained optimization in one reproducible workflow.\par}
+\vspace{10mm}
+{\color{line}\rule{\textwidth}{0.6pt}}\par
+\vspace{5mm}
+{\small\color{slate}
+\textbf{Research focus}\hfill Cash-flow timing \;\textbullet\; Portfolio constraints \;\textbullet\; Implementation costs}
+
+\vfill
+\begin{tabularx}{\textwidth}{>{\bfseries\color{navy}}p{37mm}X}
+Objective & Fund an inflation-linked annual income stream with a portfolio of euro-denominated government bonds.\\[2mm]
+Method & Monthly cash-flow matching with integer lots, taxation, fees, liquidity and concentration limits.\\[2mm]
+Test result & Full liability coverage with no additional external funding during the planning horizon.\\
+\end{tabularx}
+\vspace{4mm}
+{\small\color{slate}Demonstration scenario using market data as of August 19, 2026. The project is intended for research and prototyping; it is not financial, tax or legal advice.}
+
+\newpage
+
+% -----------------------------------------------------------------------------
+% PAGINA 2 -- PROBLEMA E OBIETTIVI
+% -----------------------------------------------------------------------------
+\section{1. The problem: investing from future commitments}
+
+Liability-Driven Investment (LDI) reverses the traditional question. Instead of searching first for the highest-return portfolio, it starts from future outflows and selects assets capable of funding them over time. The key risk is therefore a cash mismatch: holding economic value without having liquidity in the month when a liability must be paid.
+
+\subsection{Test scenario}
+
+The configuration file defines an initial annual pension payment of \EUR{9000}, increased by \num{2.5}\% each year. Payments begin in January 2037 and end in January 2052.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.22}
+\begin{tabular}{@{}lr@{\qquad}lr@{}}
+\toprule
+\textbf{Indicator} & \textbf{Value} & \textbf{Indicator} & \textbf{Value}\\
+\midrule
+Number of payments & 16 & First payment & \EUR{9000.00}\\
+Final payment & \EUR{13034.68} & Total nominal liabilities & \EUR{174422.02}\\
+Annual inflation & \num{2.5}\% & Frequency & annual\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Project objectives}
+
+\begin{itemize}
+  \item \textbf{Timing coverage:} coupons, redemptions and accumulated cash must cover every liability on a monthly basis.
+  \item \textbf{Investability:} purchases are restricted to integer \EUR{1000} lots, with at most \EUR{20000} nominal per ISIN.
+  \item \textbf{Economic realism:} \num{12.5}\% tax on coupons only and a \num{0.19}\% purchase fee, with a \EUR{2.95} minimum and \EUR{19} maximum per order.
+  \item \textbf{Diversification:} at most \num{40}\% of total cost per issuer and no more than 30 positions.
+  \item \textbf{Transparency:} shortfalls are never hidden; they are measured as \texttt{uncovered\_eur} and exported in the Excel report.
+\end{itemize}
+
+\subsection{Success criterion}
+
+A solution is effective when the cumulative cash balance never becomes negative in payment months, external funding is zero or minimal and every mandate constraint is respected. Return is a secondary indicator; it does not replace the coverage test.
+
+\begin{center}
+\pill{Liabilities} $\longrightarrow$ \pill{Monthly flows} $\longrightarrow$ \pill{Real constraints} $\longrightarrow$ \pill{Portfolio}
+\end{center}
+
+\source{Version-controlled scenario in \texttt{data/config/liabilities.json}; mandate settings in \texttt{utils.py}.}
+
+\newpage
+
+% -----------------------------------------------------------------------------
+% PAGINA 3 -- DATI E PIPELINE
+% -----------------------------------------------------------------------------
+\section{2. Data, pipeline and reproducibility}
+
+The application runs a reproducible two-step workflow. The canonical \texttt{python main.py} command refreshes data, filters the universe, rebuilds each bond's cash flows, solves the problem and produces the Excel audit trail. The separate \texttt{python plots.py} command generates the graphical outputs from the optimized result. Refreshing is explicit, preventing silent reuse of stale input caches.
+
+\subsection{From market data to the cash-flow matrix}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{>{\bfseries\color{blue}}p{28mm}X>{\raggedleft\arraybackslash}p{25mm}}
+\toprule
+\textbf{Stage} & \textbf{Main rule} & \textbf{Rows/bonds}\\
+\midrule
+Download & Bond reference and end-of-day data; ECB Svensson euro curve & 1,322 raw\\
+Cleaning & EUR, GOV/SOV, available rating, lot $\leq$ \EUR{1000}, traded price, volume $\geq$ \EUR{20000}, life $\geq$ 1 year & 306 clean\\
+Validation & Yield to maturity recomputed from cash flows and compared with the source & 282 validated\\
+MILP eligibility & Positive price and finite, positive future flows compatible with the horizon & 255 eligible\\
+Output & Portfolio, monthly flows, metrics, charts and audit workbook & 13 selected\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Each matrix row represents a \EUR{1000} nominal lot; columns represent months. Redeemed principal is not taxed, while the net coupon is $C(1-0.125)$. Purchase price and accrued interest are recorded separately, preserving a traceable path from each security to its cash flows.
+
+\begin{center}
+  \includegraphics[width=0.91\textwidth,height=0.40\textheight,keepaspectratio]{data/processed/plots/02_cashflow_coverage.png}
+\end{center}
+
+The chart compares liabilities with bond cash flows and highlights the role of cash carried forward from prior months. A coupon received early can fund a later payment without imposing an artificial same-date match.
+
+\source{Bond data: Simple Tools for Investors; euro risk-free curve: ECB Data API. Snapshot used: August 19, 2026.}
+
+\newpage
+
+% -----------------------------------------------------------------------------
+% PAGINA 4 -- MODELLO
+% -----------------------------------------------------------------------------
+\section{3. The optimization engine}
+
+The core is a Mixed-Integer Linear Program (MILP). For each bond $i$, the integer variable $x_i\geq0$ is the number of lots purchased, while binary variable $z_i$ indicates whether the position is opened. If $a_{it}$ is one lot's net flow in month $t$ and $L_t$ is the liability, cumulative coverage requires:
+
+\begin{equation*}
+  \sum_i x_i\!\left(\sum_{\tau\leq t} a_{i\tau}\right)
+  + \sum_{\tau\leq t} u_{\tau}
+  \;\geq\; \sum_{\tau\leq t} L_{\tau}
+  \qquad \forall t,
+\end{equation*}
+
+where $u_t\geq0$ represents any external funding. The objective is lexicographic: it first minimizes total uncovered liabilities and then purchase cost, including the exact piecewise fee schedule.
+
+\subsection{Implemented constraints}
+
+\begin{tabularx}{\textwidth}{>{\bfseries\color{blue}}p{37mm}X}
+Quantity & $x_i\in\mathbb{Z}_{+}$ and $0\leq x_i\leq20$: fractional lots are not allowed.\\
+Activation & $x_i\leq20z_i$ and $\sum_i z_i\leq30$: the number of positions is controlled.\\
+Concentration & Each issuer's cost cannot exceed 40\% of total portfolio cost.\\
+Fees & Three exact linear regions: minimum, proportional rate and per-order cap.\\
+Tax & The 12.5\% tax applies to coupons, not to principal or accrued interest.\\
+Liquidity & Only last-traded prices and sufficient reported daily nominal volume are admitted.\\
+\end{tabularx}
+
+\subsection{Why cumulative cash matters}
+
+A strict ``date-against-date'' match would reject useful bonds merely because they pay a few months early. The engine instead maintains a virtual cash account:
+\[
+ B_t = B_{t-1}+\sum_i x_i a_{it}+u_t-L_t, \qquad B_t\geq0.
+\]
+This allows coupons and redemptions to be held until the next liability. The model neither remunerates this cash nor reinvests it automatically, a conservative choice that avoids assigning unobserved returns.
+
+\subsection{Interpretation metrics}
+
+\begin{itemize}
+  \item \textbf{XIRR}: annual internal rate on dated portfolio cash flows, net of the initial purchase fee.
+  \item \textbf{Nominal ROI}: $(\text{future proceeds}-\text{cost})/\text{cost}$; it must be read alongside the multi-decade horizon.
+  \item \textbf{Average maturity}: remaining maturity weighted by each position's complete cost.
+  \item \textbf{MIP gap}: relative distance from the best known solution; it is zero in this test.
+\end{itemize}
+
+\source{Implementation in \texttt{ldi\_engine.py}, using \texttt{scipy.optimize.milp} (HiGHS).}
+
+\newpage
+
+% -----------------------------------------------------------------------------
+% PAGINA 5 -- RISULTATI
+% -----------------------------------------------------------------------------
+\section{4. Test results}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{>{\centering\arraybackslash}p{35mm}>{\centering\arraybackslash}p{35mm}>{\centering\arraybackslash}p{35mm}>{\centering\arraybackslash}p{35mm}}
+\colorbox{light}{\parbox{31mm}{\centering\scriptsize INVESTMENT\\\Large\bfseries\color{navy}\EUR{89598.00}}} &
+\colorbox{light}{\parbox{31mm}{\centering\scriptsize COVERAGE\\\Large\bfseries\color{teal}100\%}} &
+\colorbox{light}{\parbox{31mm}{\centering\scriptsize XIRR\\\Large\bfseries\color{blue}4.20\%}} &
+\colorbox{light}{\parbox{31mm}{\centering\scriptsize POSITIONS\\\Large\bfseries\color{gold}13}}\\
+\end{tabular}
+\end{center}
+
+The portfolio purchases 138 lots, equal to \EUR{138000} nominal. It generates \EUR{174439.38} of future proceeds, with coupons net of tax, against \EUR{174422.02} of liabilities. The final balance is positive by \EUR{17.35}, while external funding is \EUR{0}. Initial purchase fees are \EUR{155.31} (0.17\% of investment); nominal ROI is 94.69\% and weighted average maturity is 18.48 years.
+
+\begin{center}
+  \includegraphics[width=0.92\textwidth,height=0.33\textheight,keepaspectratio]{data/processed/plots/01_cash_account.png}
+\end{center}
+
+\vspace{-2mm}
+\begin{minipage}[t]{0.49\textwidth}
+\subsection{Issuer allocation}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Issuer} & \textbf{Cost} & \textbf{Weight}\\
+\midrule
+France & \EUR{35725.87} & 39.87\%\\
+Italy & \EUR{35695.34} & 39.84\%\\
+European Union & \EUR{13524.22} & 15.09\%\\
+Belgium & \EUR{3661.76} & 4.09\%\\
+Poland & \EUR{990.81} & 1.11\%\\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\subsection{Reading the result}
+\small
+France and Italy remain just below the 40\% limit, showing that the concentration constraint is active. The minimum balance after a payment is \EUR{17.35}, so the close match was not achieved by materially overfunding the strategy. A zero \textit{MIP gap} certifies optimality for the formulation and input data, not the absence of market or model risk.
+\end{minipage}
+
+\source{\texttt{data/processed/ldi\_optimization.xlsx} and reproducible charts generated by \texttt{plots.py}.}
+
+\newpage
+
+% -----------------------------------------------------------------------------
+% PAGINA 6 -- VALIDAZIONE, LIMITI E CONCLUSIONI
+% -----------------------------------------------------------------------------
+\section{5. Validation, limitations and next steps}
+
+\begin{center}
+  \includegraphics[width=0.86\textwidth,height=0.27\textheight,keepaspectratio]{data/processed/plots/03_allocation_and_concentration.png}
+\end{center}
+
+\subsection{Checks performed}
+
+The automated suite contains 22 tests, all passing. It covers cash-flow generation, yield validation, liquidity filters, liability configuration, cash carry, taxation, fees, nominal, position and concentration limits, the pipeline and graphical output. The workbook retains three audit layers: summary, purchase plan and 306 monthly rows from 2026-08 through 2052-01.
+
+\subsection{What the result does not prove}
+
+\begin{itemize}
+  \item Prices are an end-of-day snapshot; execution, bid--ask spreads and future market depth may differ.
+  \item The strategy assumes buy-and-hold to redemption; it does not model early sales, default, downgrades, complete personal taxation or custody costs.
+  \item Inflation and liabilities are deterministic. Stochastic scenarios, longevity and yield-curve shocks require additional analysis.
+  \item Intermediate cash earns no interest. The model is conservative on reinvestment but does not measure the operational risk of liquidity management.
+  \item A zero MILP gap proves the quality of the mathematical solution for these inputs, not the absolute correctness of the assumptions.
+\end{itemize}
+
+\subsection{Next steps}
+
+\begin{tabularx}{\textwidth}{>{\bfseries\color{blue}}p{32mm}X}
+Stress tests & Parallel and non-parallel curve shifts, higher inflation, reduced liquidity and delayed payments.\\
+Robustness & Multi-scenario optimization and a configurable minimum cash buffer.\\
+Risk & Default probabilities, recovery, rating migration and duration/convexity sensitivity.\\
+Production & Logging, market-snapshot versioning, automated PDF reporting and drift monitoring.\\
+\end{tabularx}
+
+\vfill
+\colorbox{navy}{\parbox{0.965\textwidth}{\color{white}\vspace{2mm}
+\textbf{Conclusion.} The project shows how a sequence of future needs can be transformed into an auditable bond plan. Its value is not merely finding 13 securities; it makes data, assumptions, costs, constraints and shortfalls explicit, so every result can be checked and regenerated.\vspace{2mm}}}
+
+\vspace{3mm}
+{\small\color{slate}\textbf{Technology:} Python 3.11, pandas, NumPy, SciPy/HiGHS, Matplotlib, OpenPyXL and Parquet. Code released under the MIT License. The data and test results are informational and do not constitute an investment recommendation.}
+
+\end{document}

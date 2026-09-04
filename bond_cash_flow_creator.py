@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -5,9 +7,13 @@ from utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
     BI_CLEAN_PATH,
+    CONFIG_DIR,
     FD_CLEAN_PATH,
     NOMINAL,
 )
+
+STEP_UP_DOWN_CASHFLOWS_PATH = CONFIG_DIR / "step_up_down_cashflows.json"
+STANDARD_CASHFLOWS_PATH = CONFIG_DIR / "standard_cashflows.json"
 
 
 def effective_frequency(couponperiodicity, coupon_rate):
@@ -177,6 +183,44 @@ def validated_bonds(bonds, nominal=NOMINAL):
     return bonds[bonds["isincode"].isin(valid_isin)].reset_index(drop=True), comparison
 
 
+def load_cashflow_overrides(paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLOWS_PATH)):
+    """Load hand-validated contractual cash flows in the native output schema."""
+    if isinstance(paths, (str, Path)):
+        paths = (paths,)
+    overrides = pd.concat([pd.read_json(path, convert_dates=["date"]) for path in paths], ignore_index=True)
+    required = {"isincode", "date", "l1", "l2", "l3"}
+    missing = required - set(overrides.columns)
+    if missing:
+        raise ValueError(f"Cash-flow override is missing columns: {sorted(missing)}")
+    overrides = overrides[["isincode", "date", "l1", "l2", "l3"]].copy()
+    overrides["isincode"] = overrides["isincode"].astype(str)
+    overrides["date"] = pd.to_datetime(overrides["date"])
+    if overrides[["l1", "l2", "l3"]].isna().any().any():
+        raise ValueError("Cash-flow override contains missing cash-flow values.")
+    if overrides.duplicated(["isincode", "date"]).any():
+        raise ValueError("Cash-flow override contains duplicate ISIN/date rows.")
+    return overrides.sort_values(["isincode", "date"]).reset_index(drop=True)
+
+
+def apply_cashflow_overrides(cashflows, overrides, bonds):
+    """Replace generated future flows for each override ISIN, without touching other bonds."""
+    replacement_isins = set(overrides["isincode"])
+    retained = cashflows.loc[~cashflows["isincode"].isin(replacement_isins)]
+    reference_dates = bonds[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
+    reference_dates["referencedate"] = pd.to_datetime(
+        reference_dates["referencedate"], dayfirst=True
+    )
+    effective_overrides = overrides.merge(reference_dates, on="isincode", how="left", validate="many_to_one")
+    effective_overrides = effective_overrides.loc[
+        effective_overrides["date"] > effective_overrides["referencedate"]
+    ].drop(columns="referencedate")
+    return (
+        pd.concat([retained, effective_overrides], ignore_index=True)
+        .sort_values(["isincode", "date"])
+        .reset_index(drop=True)
+    )
+
+
 def monthly_cashflow_matrix(cashflows):
     cf = cashflows.copy()
     cf["month"] = cf["date"].dt.to_period("M").astype(str)
@@ -193,9 +237,24 @@ def monthly_cashflow_matrix(cashflows):
 def build_cashflow_outputs():
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
-    bonds = merge_clean_bonds(fd_clean, bi_clean)
-    bonds, comparison = validated_bonds(bonds)
+    all_bonds = merge_clean_bonds(fd_clean, bi_clean)
+    overrides = load_cashflow_overrides()
+    override_isins = set(overrides["isincode"])
+    missing_override_bonds = override_isins - set(all_bonds["isincode"])
+    if missing_override_bonds:
+        raise ValueError(f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}")
+
+    bonds, comparison = validated_bonds(all_bonds)
+    # These structured bonds are validated against their explicit schedules,
+    # rather than the generic fixed-coupon cash-flow generator.
+    override_bonds = all_bonds.loc[all_bonds["isincode"].isin(override_isins)]
+    bonds = (
+        pd.concat([bonds.loc[~bonds["isincode"].isin(override_isins)], override_bonds])
+        .drop_duplicates("isincode")
+        .reset_index(drop=True)
+    )
     cashflows = create_all_cashflows(bonds)
+    cashflows = apply_cashflow_overrides(cashflows, overrides, bonds)
     matrix = monthly_cashflow_matrix(cashflows)
     cashflows.to_parquet(BOND_CASHFLOWS_PATH, engine="pyarrow", compression="snappy", index=False)
     matrix.to_parquet(BOND_CASHFLOW_MATRIX_PATH, engine="pyarrow", compression="snappy")

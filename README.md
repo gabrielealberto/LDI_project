@@ -18,7 +18,8 @@ It is not investment, tax, or legal advice.
 - Includes the broker purchase commission in selection, cost, ROI, and XIRR.
 - Carries earlier bond cash flows into later monthly liabilities.
 - Reports any external funding need explicitly as `uncovered_eur`.
-- Exports an Excel audit trail and a three-chart PNG dashboard.
+- Exports an Excel audit trail, a three-chart analytical dashboard, and a
+  square presentation graphic designed for LinkedIn.
 - Defines liabilities in JSON, without editing Python source.
 
 ## Repository structure
@@ -77,6 +78,9 @@ Generate the dashboard after a successful optimization:
 ```powershell
 python plots.py
 ```
+
+The command also creates `data/processed/plots/04_linkedin_summary.png`, a
+high-resolution 1:1 project summary suitable for a LinkedIn post.
 
 ## Workflow
 
