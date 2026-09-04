@@ -421,6 +421,8 @@ def optimize_cashflow_matching(
             "description",
             "issuerdescription",
             "issuercode",
+            "ratingsp",
+            "ratingmoodys",
             "redemptiondate",
         ]
         if column in metadata
@@ -502,6 +504,45 @@ def print_purchase_plan(result):
         if result["prefer_short_maturity"]
         else "No maturity preference"
     )
+    rating_columns = [column for column in ("ratingsp", "ratingmoodys") if column in portfolio]
+    if rating_columns:
+        # Credit ratings are ordinal categories, so a median is more meaningful
+        # than an arithmetic mean. Prefer S&P and fall back to Moody's per bond.
+        rating_scale = {
+            "AAA": 1,
+            "AA+": 2,
+            "AA": 3,
+            "AA-": 4,
+            "A+": 5,
+            "A": 6,
+            "A-": 7,
+            "BBB+": 8,
+            "BBB": 9,
+            "BBB-": 10,
+            "BB+": 11,
+            "BB": 12,
+            "BB-": 13,
+            "B+": 14,
+            "B": 15,
+            "B-": 16,
+            "CCC": 17,
+            "CC": 18,
+            "C": 19,
+            "D": 20,
+        }
+        ratings = portfolio[rating_columns].replace({"": np.nan}).bfill(axis=1).iloc[:, 0]
+        ordinal = ratings.astype(str).str.strip().str.upper().map(rating_scale)
+        rated = portfolio.loc[ordinal.notna(), ["cost_eur"]].assign(rating_score=ordinal.dropna())
+        if not rated.empty and rated["cost_eur"].sum() > 0:
+            rated = rated.sort_values("rating_score")
+            midpoint = rated["cost_eur"].sum() / 2
+            median_score = float(
+                rated.loc[rated["cost_eur"].cumsum().ge(midpoint), "rating_score"].iloc[0]
+            )
+            median_rating = min(
+                rating_scale, key=lambda rating: abs(rating_scale[rating] - median_score)
+            )
+            print(f"Weighted median credit rating: {median_rating} ({len(rated)} rated positions)")
     print(f"Residual shortfall: EUR {result['uncovered_eur']:,.2f}")
     terminal_capital = result["terminal_portfolio_cash_eur"]
     terminal_capital_ratio = terminal_capital / total_cost if total_cost else 0.0
