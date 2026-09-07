@@ -20,7 +20,9 @@ class PipelineCacheContractTests(unittest.TestCase):
             path = Path(directory) / "index.parquet"
             self._write_index(path, "value", dates)
 
-            usable = pipeline._usable_cached_monthly_index(path, "value", max_age_months=2)
+            usable = pipeline._usable_cached_monthly_index(
+                path, "value", max_age_months=2
+            )
 
         self.assertTrue(usable)
 
@@ -31,7 +33,9 @@ class PipelineCacheContractTests(unittest.TestCase):
             path = Path(directory) / "index.parquet"
             self._write_index(path, "value", dates)
 
-            usable = pipeline._usable_cached_monthly_index(path, "value", max_age_months=2)
+            usable = pipeline._usable_cached_monthly_index(
+                path, "value", max_age_months=2
+            )
 
         self.assertFalse(usable)
 

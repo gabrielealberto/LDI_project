@@ -94,9 +94,14 @@ class InflationShock:
                 if values.get("convergence_half_life_months") is not None
                 else None
             ),
-            rationale=str(values.get("rationale", "Legacy deterministic stress definition.")),
+            rationale=str(
+                values.get("rationale", "Legacy deterministic stress definition.")
+            ),
             calibration_basis=str(
-                values.get("calibration_basis", "Legacy configuration; governance review required.")
+                values.get(
+                    "calibration_basis",
+                    "Legacy configuration; governance review required.",
+                )
             ),
             review_frequency_months=int(values.get("review_frequency_months", 12)),
             model_version=str(values.get("model_version", "inflation_stress_v2")),
@@ -104,45 +109,82 @@ class InflationShock:
 
     def validate(self) -> None:
         if not self.scenario_id or self.scenario_id.strip() != self.scenario_id:
-            raise ValueError("Inflation stress scenario_id must be a non-empty trimmed string.")
+            raise ValueError(
+                "Inflation stress scenario_id must be a non-empty trimmed string."
+            )
         if self.family not in SCENARIO_FAMILIES:
-            raise ValueError(f"Inflation stress family must be one of: {sorted(SCENARIO_FAMILIES)}")
+            raise ValueError(
+                f"Inflation stress family must be one of: {sorted(SCENARIO_FAMILIES)}"
+            )
         if self.start_rule not in START_RULES:
-            raise ValueError(f"Inflation stress start_rule must be one of: {sorted(START_RULES)}")
+            raise ValueError(
+                f"Inflation stress start_rule must be one of: {sorted(START_RULES)}"
+            )
         if self.start_offset_months < 0:
             raise ValueError("Inflation stress start_offset_months cannot be negative.")
         if self.start_rule == "absolute":
             if self.start_date is None:
                 raise ValueError("Absolute inflation stresses require start_date.")
-            if self.start_date != self.start_date.normalize() or self.start_date.day != 1:
+            if (
+                self.start_date != self.start_date.normalize()
+                or self.start_date.day != 1
+            ):
                 raise ValueError("Inflation stress start_date must be a month start.")
         elif self.start_date is not None:
-            if self.start_date != self.start_date.normalize() or self.start_date.day != 1:
-                raise ValueError("Inflation stress start_date must be a month start when supplied.")
+            if (
+                self.start_date != self.start_date.normalize()
+                or self.start_date.day != 1
+            ):
+                raise ValueError(
+                    "Inflation stress start_date must be a month start when supplied."
+                )
         values = (self.common_annual_shock_bp, self.foi_hicp_spread_shock_bp)
         if not np.isfinite(values).all():
             raise ValueError("Inflation stress shock sizes must be finite.")
-        if not self.severity.strip() or not self.rationale.strip() or not self.calibration_basis.strip():
-            raise ValueError("Inflation stresses require severity, rationale, and calibration_basis.")
+        if (
+            not self.severity.strip()
+            or not self.rationale.strip()
+            or not self.calibration_basis.strip()
+        ):
+            raise ValueError(
+                "Inflation stresses require severity, rationale, and calibration_basis."
+            )
         if self.review_frequency_months < 1:
-            raise ValueError("Inflation stress review_frequency_months must be positive.")
+            raise ValueError(
+                "Inflation stress review_frequency_months must be positive."
+            )
         if self.family == "regime_shift":
             if self.start_rule != "forecast_start" or self.start_offset_months != 0:
-                raise ValueError("Regime shifts must begin at forecast_start with no offset.")
+                raise ValueError(
+                    "Regime shifts must begin at forecast_start with no offset."
+                )
             if self.common_annual_shock_bp or self.foi_hicp_spread_shock_bp:
-                raise ValueError("Regime shifts cannot combine target changes with temporary shocks.")
-            if self.long_run_hicp_target is None or not np.isfinite(self.long_run_hicp_target):
+                raise ValueError(
+                    "Regime shifts cannot combine target changes with temporary shocks."
+                )
+            if self.long_run_hicp_target is None or not np.isfinite(
+                self.long_run_hicp_target
+            ):
                 raise ValueError("Regime shifts require a finite long_run_hicp_target.")
             if self.long_run_hicp_target <= -1:
                 raise ValueError("Regime-shift long_run_hicp_target must exceed -100%.")
-            if self.convergence_half_life_months is None or self.convergence_half_life_months <= 0:
-                raise ValueError("Regime shifts require a positive convergence_half_life_months.")
+            if (
+                self.convergence_half_life_months is None
+                or self.convergence_half_life_months <= 0
+            ):
+                raise ValueError(
+                    "Regime shifts require a positive convergence_half_life_months."
+                )
             if self.long_run_foi_hicp_spread_bp is not None and not np.isfinite(
                 self.long_run_foi_hicp_spread_bp
             ):
                 raise ValueError("Regime-shift FOI/HICP spread target must be finite.")
         else:
-            if self.ramp_months < 1 or self.hold_months < 0 or self.decay_half_life_months <= 0:
+            if (
+                self.ramp_months < 1
+                or self.hold_months < 0
+                or self.decay_half_life_months <= 0
+            ):
                 raise ValueError("Inflation stress timing parameters are invalid.")
             if any(
                 value is not None
@@ -152,7 +194,9 @@ class InflationShock:
                     self.convergence_half_life_months,
                 )
             ):
-                raise ValueError("Only regime shifts may define long-run target overrides.")
+                raise ValueError(
+                    "Only regime shifts may define long-run target overrides."
+                )
 
     def resolved_start_date(self, forecast_start: pd.Timestamp) -> pd.Timestamp:
         """Resolve and validate the scenario start against this forecast run."""
@@ -166,7 +210,11 @@ class InflationShock:
         """Return the material profile horizon; regime shifts remain structural."""
         if self.family == "regime_shift":
             return None
-        return int(self.ramp_months + self.hold_months + np.ceil(3 * self.decay_half_life_months))
+        return int(
+            self.ramp_months
+            + self.hold_months
+            + np.ceil(3 * self.decay_half_life_months)
+        )
 
 
 def load_inflation_stresses(
@@ -209,15 +257,21 @@ def _validate_path(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     required_values = ["date", *INDEX_COLUMNS]
     if checked.empty or checked[required_values].isna().any().any():
         raise ValueError(f"{name} contains invalid values.")
-    if checked["date"].duplicated().any() or not checked["date"].dt.is_month_start.all():
+    if (
+        checked["date"].duplicated().any()
+        or not checked["date"].dt.is_month_start.all()
+    ):
         raise ValueError(f"{name} must have unique month-start dates.")
     checked = checked.sort_values("date").reset_index(drop=True)
-    expected = pd.date_range(checked["date"].iloc[0], checked["date"].iloc[-1], freq="MS")
+    expected = pd.date_range(
+        checked["date"].iloc[0], checked["date"].iloc[-1], freq="MS"
+    )
     if not checked["date"].equals(pd.Series(expected)):
         raise ValueError(f"{name} must be monthly and gap-free.")
-    if not np.isfinite(checked[list(INDEX_COLUMNS)].to_numpy()).all() or not (
-        checked[list(INDEX_COLUMNS)] > 0
-    ).all().all():
+    if (
+        not np.isfinite(checked[list(INDEX_COLUMNS)].to_numpy()).all()
+        or not (checked[list(INDEX_COLUMNS)] > 0).all().all()
+    ):
         raise ValueError(f"{name} index levels must be finite and positive.")
     return checked
 
@@ -232,8 +286,7 @@ def shock_profile_bp(dates: pd.Series, scenario: InflationShock) -> np.ndarray:
     dates = pd.to_datetime(dates)
     start_date = scenario.resolved_start_date(dates.min())
     elapsed = (
-        pd.PeriodIndex(dates, freq="M").asi8
-        - pd.Period(start_date, freq="M").ordinal
+        pd.PeriodIndex(dates, freq="M").asi8 - pd.Period(start_date, freq="M").ordinal
     )
     profile = np.zeros(len(elapsed), dtype=float)
     active = elapsed >= 0
@@ -276,7 +329,9 @@ def _build_regime_shift_baseline(
 ) -> pd.DataFrame:
     """Rebuild the forecast from history under a new long-run inflation anchor."""
     if resolved_start_date != baseline["date"].iloc[0]:
-        raise ValueError("Regime shifts must begin at the first baseline forecast month.")
+        raise ValueError(
+            "Regime shifts must begin at the first baseline forecast month."
+        )
     config = BaselineConfig(
         annual_target=float(scenario.long_run_hicp_target),
         convergence_half_life_months=float(scenario.convergence_half_life_months),
@@ -303,12 +358,16 @@ def build_stressed_baseline(
     history = _validate_path(history, "Inflation history")
     expected_start = history["date"].iloc[-1] + pd.offsets.MonthBegin(1)
     if baseline["date"].iloc[0] != expected_start:
-        raise ValueError("Inflation baseline must begin in the month after the final history row.")
+        raise ValueError(
+            "Inflation baseline must begin in the month after the final history row."
+        )
 
     resolved_start_date = scenario.resolved_start_date(baseline["date"].iloc[0])
     if scenario.family == "regime_shift":
         return _validate_path(
-            _build_regime_shift_baseline(baseline, history, scenario, resolved_start_date),
+            _build_regime_shift_baseline(
+                baseline, history, scenario, resolved_start_date
+            ),
             f"Stress scenario {scenario.scenario_id}",
         )
 
@@ -340,7 +399,11 @@ def build_stressed_baseline(
             )
             prior_stressed = prior_base
             for position in range(first_active, len(values)):
-                base_prior = prior_base if position == first_active else base_values[position - 1]
+                base_prior = (
+                    prior_base
+                    if position == first_active
+                    else base_values[position - 1]
+                )
                 base_change = np.log(base_values[position] / base_prior)
                 prior_stressed *= np.exp(
                     base_change + shock[position] / (BP_PER_UNIT * MONTHS_PER_YEAR)
@@ -371,4 +434,6 @@ def build_stressed_index_provider(
 ) -> tuple[BaselineIndexProvider, pd.DataFrame]:
     """Return one shared provider and its auditable shocked forecast path."""
     stressed = build_stressed_baseline(baseline, history, scenario)
-    return build_index_provider(stressed, foi_path=foi_path, hicp_path=hicp_path), stressed
+    return build_index_provider(
+        stressed, foi_path=foi_path, hicp_path=hicp_path
+    ), stressed

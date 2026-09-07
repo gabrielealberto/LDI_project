@@ -51,7 +51,11 @@ class Cf_engine:
         )
         cf = np.zeros(len(dates))
         if self.liability.frequency in {"annual", "every_n_years"}:
-            interval = 1 if self.liability.frequency == "annual" else self.liability.interval_years
+            interval = (
+                1
+                if self.liability.frequency == "annual"
+                else self.liability.interval_years
+            )
             mask = dates.month == self.liability.start_date.month
             years_elapsed = dates.year - self.liability.start_date.year
             mask &= years_elapsed % interval == 0
@@ -61,7 +65,9 @@ class Cf_engine:
                         "An index provider is required for inflation-indexed liabilities."
                     )
                 terms = self.liability.indexation
-                anchor = pd.Timestamp(terms.get("base_reference_date", self.liability.start_date))
+                anchor = pd.Timestamp(
+                    terms.get("base_reference_date", self.liability.start_date)
+                )
                 lag = int(terms.get("observation_lag_months", 0))
                 base = index_provider.reference_level(terms["index_id"], anchor, lag)
                 cf[mask] = [
@@ -92,14 +98,17 @@ class LiabilityPortfolio:
         self.valuation_date = valuation_date
 
     def merge_liabilities(self, index_provider=None):
-        if index_provider is None and any(e.liability.indexation for e in self.liabilities):
+        if index_provider is None and any(
+            e.liability.indexation for e in self.liabilities
+        ):
             from .inflation_linked_cashflows import load_baseline_index_provider
 
             index_provider = load_baseline_index_provider()
         cf_pairs = [e.to_cf(index_provider=index_provider) for e in self.liabilities]
         common_dates = pd.date_range(
             start=min(e.liability.start_date for e in self.liabilities),
-            end=max(e.liability.end_date for e in self.liabilities) - pd.DateOffset(months=1),
+            end=max(e.liability.end_date for e in self.liabilities)
+            - pd.DateOffset(months=1),
             freq="MS",
         )
         all_dates = np.concatenate([d.to_numpy() for d, _ in cf_pairs])
@@ -123,11 +132,6 @@ class LiabilityPortfolio:
     def duration(self, index_provider=None):
         dcf, pv, t, _ = self.pv(index_provider=index_provider)
         return np.sum(t * dcf) / pv
-
-
-portfolio = LiabilityPortfolio(
-    [Cf_engine(liability) for liability in load_liabilities()], dt.datetime.today()
-)
 
 
 def cashflows_for_provider(index_provider):

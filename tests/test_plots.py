@@ -68,14 +68,15 @@ class LinkedInPlotTests(unittest.TestCase):
 
     def test_creates_stress_rate_and_funding_charts(self):
         dates = pd.date_range("2026-01-01", periods=24, freq="MS")
-        baseline = pd.DataFrame(
-            {"date": dates, "foi_yoy": 0.02, "hicp_yoy": 0.02}
-        )
+        baseline = pd.DataFrame({"date": dates, "foi_yoy": 0.02, "hicp_yoy": 0.02})
         stressed = baseline.copy()
         stressed["foi_yoy"] = np.linspace(0.02, 0.04, len(stressed))
         stressed["hicp_yoy"] = np.linspace(0.02, 0.035, len(stressed))
         report = {
-            "scenario_paths": {"baseline": baseline, "inflation_upside_200bp": stressed},
+            "scenario_paths": {
+                "baseline": baseline,
+                "inflation_upside_200bp": stressed,
+            },
             "summary": pd.DataFrame(
                 {
                     "scenario_id": ["baseline", "inflation_upside_200bp"],

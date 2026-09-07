@@ -36,13 +36,28 @@ class MainOrchestrationTests(unittest.TestCase):
         with (
             patch.object(main, "refresh_ldi_inputs", return_value=["ready"]),
             patch.object(main, "baseline_cashflows", return_value=([], [])),
-            patch.object(main, "load_bond_inputs", return_value=(pd.DataFrame(), pd.DataFrame())),
+            patch.object(
+                main, "load_bond_inputs", return_value=(pd.DataFrame(), pd.DataFrame())
+            ),
             patch.object(main, "optimize_cashflow_matching", side_effect=optimize),
             patch.object(main, "print_purchase_plan"),
-            patch.object(main, "export_ldi_excel", side_effect=lambda value: events.append("excel") or "report.xlsx"),
+            patch.object(
+                main,
+                "export_ldi_excel",
+                side_effect=lambda value: events.append("excel") or "report.xlsx",
+            ),
             patch.object(main, "run_inflation_stress_test", side_effect=stress),
-            patch.object(main, "save_inflation_stress_results", side_effect=lambda value: events.append("save") or ("summary", "monthly")),
-            patch.object(main, "plot_portfolio", side_effect=lambda *args, **kwargs: events.append("plots") or []),
+            patch.object(
+                main,
+                "save_inflation_stress_results",
+                side_effect=lambda value: events.append("save")
+                or ("summary", "monthly"),
+            ),
+            patch.object(
+                main,
+                "plot_portfolio",
+                side_effect=lambda *args, **kwargs: events.append("plots") or [],
+            ),
         ):
             output = main.main()
 

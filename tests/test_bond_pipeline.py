@@ -34,7 +34,9 @@ class BondCashFlowTests(unittest.TestCase):
 
         cashflows = create_all_cashflows(bonds)
 
-        self.assertEqual(cashflows.groupby("isincode").size().to_dict(), {"A": 2, "B": 2})
+        self.assertEqual(
+            cashflows.groupby("isincode").size().to_dict(), {"A": 2, "B": 2}
+        )
 
 
 class BondCleanerTests(unittest.TestCase):

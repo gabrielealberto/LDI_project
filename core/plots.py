@@ -122,7 +122,15 @@ def _compact_axis_eur(value, _position=None):
 
 
 def _annotate_point(axis, x_value, y_value, text, color):
-    axis.scatter([x_value], [y_value], s=22, color=color, edgecolor="white", linewidth=0.6, zorder=4)
+    axis.scatter(
+        [x_value],
+        [y_value],
+        s=22,
+        color=color,
+        edgecolor="white",
+        linewidth=0.6,
+        zorder=4,
+    )
     axis.annotate(
         text,
         (x_value, y_value),
@@ -352,19 +360,32 @@ def plot_inflation_stress_funding(stress_report, output_dir):
     figure, axes = _new_figure(figsize=(13, 7.5), height_ratios=(1, 1))
     funding_axis, liquidity_axis = axes
     funding_bars = funding_axis.barh(
-        summary["label"], summary["external_funding_eur"], color=summary["color"], height=0.54
+        summary["label"],
+        summary["external_funding_eur"],
+        color=summary["color"],
+        height=0.54,
     )
     funding_axis.bar_label(
         funding_bars,
         labels=[_compact_eur(value) for value in summary["external_funding_eur"]],
-        padding=4, color=COLORS["ink"], fontsize=8,
+        padding=4,
+        color=COLORS["ink"],
+        fontsize=8,
     )
-    funding_axis.set_title("External funding requirement", loc="left", color=COLORS["ink"], fontweight="bold")
+    funding_axis.set_title(
+        "External funding requirement",
+        loc="left",
+        color=COLORS["ink"],
+        fontweight="bold",
+    )
     funding_axis.set_xlabel("EUR", color=COLORS["muted"])
     funding_axis.xaxis.set_major_formatter(FuncFormatter(_compact_axis_eur))
 
     liquidity_bars = liquidity_axis.barh(
-        summary["label"], summary["minimum_pre_funding_cash_balance_eur"], color=summary["color"], height=0.54
+        summary["label"],
+        summary["minimum_pre_funding_cash_balance_eur"],
+        color=summary["color"],
+        height=0.54,
     )
     for bar, balance, deficit_months in zip(
         liquidity_bars,
@@ -394,7 +415,12 @@ def plot_inflation_stress_funding(stress_report, output_dir):
                 fontsize=8,
             )
     liquidity_axis.axvline(0, color=COLORS["ink"], linewidth=0.75)
-    liquidity_axis.set_title("Lowest pre-funding cash balance", loc="left", color=COLORS["ink"], fontweight="bold")
+    liquidity_axis.set_title(
+        "Lowest pre-funding cash balance",
+        loc="left",
+        color=COLORS["ink"],
+        fontweight="bold",
+    )
     liquidity_axis.set_xlabel("EUR", color=COLORS["muted"])
     liquidity_axis.xaxis.set_major_formatter(FuncFormatter(_compact_axis_eur))
     for axis in axes:

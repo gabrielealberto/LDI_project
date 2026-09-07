@@ -43,7 +43,9 @@ class BaselineIndexProvider:
             raise ValueError(f"Invalid {index_id} level for {month:%Y-%m}.")
         return value
 
-    def reference_level(self, index_id: str, date: pd.Timestamp, lag_months: int = 3) -> float:
+    def reference_level(
+        self, index_id: str, date: pd.Timestamp, lag_months: int = 3
+    ) -> float:
         """Return the lagged, linearly interpolated daily reference index.
 
         The MEF coefficient tables use the index three months before the payment
@@ -66,7 +68,9 @@ def _read_levels(path: Path, column: str) -> pd.Series:
     values = pd.to_numeric(frame[column], errors="coerce")
     if values.isna().any() or not (values > 0).all():
         raise ValueError(f"Invalid index levels in {path}.")
-    return pd.Series(values.to_numpy(dtype=float), index=frame["date"], name=column).sort_index()
+    return pd.Series(
+        values.to_numpy(dtype=float), index=frame["date"], name=column
+    ).sort_index()
 
 
 def build_index_provider(
@@ -81,7 +85,11 @@ def build_index_provider(
         raise ValueError(f"Inflation baseline is missing columns: {sorted(missing)}")
     baseline = baseline[["date", *INDEX_COLUMNS.values()]].copy()
     baseline["date"] = pd.to_datetime(baseline["date"])
-    if baseline.empty or baseline["date"].duplicated().any() or not baseline["date"].dt.is_month_start.all():
+    if (
+        baseline.empty
+        or baseline["date"].duplicated().any()
+        or not baseline["date"].dt.is_month_start.all()
+    ):
         raise ValueError("Inflation baseline does not have unique month-start dates.")
 
     history = {
@@ -99,11 +107,15 @@ def build_index_provider(
             raise ValueError(f"Inflation baseline has invalid {index_id} levels.")
         overlap = history[index_id].index.intersection(forecast.index)
         if len(overlap):
-            raise ValueError(f"History and baseline overlap for {index_id}: {overlap[0]:%Y-%m}.")
+            raise ValueError(
+                f"History and baseline overlap for {index_id}: {overlap[0]:%Y-%m}."
+            )
         combined = pd.concat([history[index_id], forecast]).sort_index()
         expected = pd.date_range(combined.index.min(), combined.index.max(), freq="MS")
         if not combined.index.equals(expected):
-            raise ValueError(f"History/baseline series has a monthly gap for {index_id}.")
+            raise ValueError(
+                f"History/baseline series has a monthly gap for {index_id}."
+            )
         levels[index_id] = combined
     return BaselineIndexProvider(levels)
 
@@ -135,7 +147,9 @@ def load_inflation_linked_terms(path: Path = CONFIG_PATH) -> dict[str, dict]:
         }
         missing = required - set(term)
         if missing:
-            raise ValueError(f"{isincode} is missing contractual fields: {sorted(missing)}")
+            raise ValueError(
+                f"{isincode} is missing contractual fields: {sorted(missing)}"
+            )
     return terms
 
 
@@ -152,7 +166,9 @@ def _coupon_dates(term: dict) -> list[pd.Timestamp]:
         dates.append(date)
         date += pd.DateOffset(months=12 // frequency)
     if not dates or dates[-1] != maturity:
-        raise ValueError(f"Coupon schedule does not end at maturity {maturity:%Y-%m-%d}.")
+        raise ValueError(
+            f"Coupon schedule does not end at maturity {maturity:%Y-%m-%d}."
+        )
     return dates
 
 
@@ -175,9 +191,9 @@ def _index_ratio(
 ) -> float:
     indexation = term["indexation"]
     lag = int(indexation.get("observation_lag_months", 3))
-    return provider.reference_level(indexation["index_id"], date, lag) / provider.reference_level(
-        indexation["index_id"], base, lag
-    )
+    return provider.reference_level(
+        indexation["index_id"], date, lag
+    ) / provider.reference_level(indexation["index_id"], base, lag)
 
 
 def _future_cashflows(
@@ -192,7 +208,9 @@ def _future_cashflows(
     rows = []
     high_water = 1.0
     issue_reference = provider.reference_level(
-        indexation["index_id"], issue_date, int(indexation.get("observation_lag_months", 3))
+        indexation["index_id"],
+        issue_date,
+        int(indexation.get("observation_lag_months", 3)),
     )
 
     for position, date in enumerate(coupons):
@@ -200,7 +218,9 @@ def _future_cashflows(
         period_ratio = _index_ratio(provider, term, date, base)
         cumulative_ratio = (
             provider.reference_level(
-                indexation["index_id"], date, int(indexation.get("observation_lag_months", 3))
+                indexation["index_id"],
+                date,
+                int(indexation.get("observation_lag_months", 3)),
             )
             / issue_reference
         )
@@ -209,13 +229,18 @@ def _future_cashflows(
 
         if term["type"] == "btpei":
             coefficient = cumulative_ratio
-            taxable = nominal * float(term["real_annual_coupon_rate"]) * accrual * coefficient
+            taxable = (
+                nominal * float(term["real_annual_coupon_rate"]) * accrual * coefficient
+            )
             if date == maturity:
                 principal = nominal
                 taxable += nominal * max(coefficient - 1.0, 0.0)
         elif term["type"] == "btp_italia":
             coupon = (
-                nominal * float(term["real_annual_coupon_rate"]) * accrual * max(period_ratio, 1.0)
+                nominal
+                * float(term["real_annual_coupon_rate"])
+                * accrual
+                * max(period_ratio, 1.0)
             )
             new_high_water = max(high_water, cumulative_ratio)
             revaluation = nominal * (new_high_water - high_water)
@@ -229,7 +254,9 @@ def _future_cashflows(
             if date == maturity:
                 principal = nominal
         else:
-            raise ValueError(f"Unsupported inflation-linked payoff type {term['type']!r}.")
+            raise ValueError(
+                f"Unsupported inflation-linked payoff type {term['type']!r}."
+            )
 
         if date > valuation_date:
             rows.append({"date": date, "l1": principal, "l2": 0.0, "l3": taxable})
@@ -261,7 +288,9 @@ def _purchase_cashflow(
     accrued = 0.0
     if next_coupon is not None:
         annual_rate = float(
-            term.get("real_annual_coupon_rate", term.get("fixed_annual_coupon_rate", 0.0))
+            term.get(
+                "real_annual_coupon_rate", term.get("fixed_annual_coupon_rate", 0.0)
+            )
         )
         accrual_days = (valuation - accrual_base).days
         period_days = (next_coupon - accrual_base).days
@@ -275,7 +304,12 @@ def _purchase_cashflow(
             accrued = nominal * accrued_rate * accrual_days / period_days
         else:
             accrued = (
-                nominal * annual_rate / frequency * accrual_days / period_days * max(factor, 1.0)
+                nominal
+                * annual_rate
+                / frequency
+                * accrual_days
+                / period_days
+                * max(factor, 1.0)
             )
     return pd.DataFrame(
         [
@@ -300,8 +334,12 @@ def build_inflation_linked_cashflows(
     market = bonds.loc[bonds["isincode"].astype(str).isin(terms)].copy()
     missing = sorted(set(terms) - set(market["isincode"].astype(str)))
     if missing and require_all_terms:
-        raise ValueError(f"Inflation-linked ISINs absent from clean market universe: {missing}")
-    terms = {isin: terms[isin] for isin in market["isincode"].astype(str) if isin in terms}
+        raise ValueError(
+            f"Inflation-linked ISINs absent from clean market universe: {missing}"
+        )
+    terms = {
+        isin: terms[isin] for isin in market["isincode"].astype(str) if isin in terms
+    }
     provider = provider or load_baseline_index_provider()
     rows = []
     for row in market.itertuples(index=False):
@@ -320,5 +358,7 @@ def build_inflation_linked_cashflows(
     if not rows:
         return pd.DataFrame(columns=["isincode", "date", "l1", "l2", "l3"])
     return (
-        pd.concat(rows, ignore_index=True).sort_values(["isincode", "date"]).reset_index(drop=True)
+        pd.concat(rows, ignore_index=True)
+        .sort_values(["isincode", "date"])
+        .reset_index(drop=True)
     )

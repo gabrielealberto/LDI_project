@@ -26,7 +26,10 @@ class BondCashflowEdgeTests(unittest.TestCase):
         cashflows = create_cashflows(bond)
 
         self.assertEqual(len(cashflows), 2)
-        self.assertEqual(cashflows["date"].dt.strftime("%Y-%m-%d").tolist(), ["2030-01-01", "2032-01-01"])
+        self.assertEqual(
+            cashflows["date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2030-01-01", "2032-01-01"],
+        )
         self.assertEqual(cashflows.iloc[0]["l1"], -980.0)
         self.assertEqual(cashflows.iloc[1]["l1"], 1_000.0)
 
@@ -44,9 +47,7 @@ class BondCashflowEdgeTests(unittest.TestCase):
         self.assertEqual(effective_frequency(2, 0.0), 0)
 
     def test_override_replaces_only_future_rows_and_keeps_purchase_flow(self):
-        bonds = pd.DataFrame(
-            {"isincode": ["A"], "referencedate": ["01/01/2030"]}
-        )
+        bonds = pd.DataFrame({"isincode": ["A"], "referencedate": ["01/01/2030"]})
         original = pd.DataFrame(
             {
                 "isincode": ["A", "A"],

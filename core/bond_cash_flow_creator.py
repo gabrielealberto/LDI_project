@@ -56,7 +56,9 @@ def calendar(couponmonths, freq, maturity, valuation_date):
             for year in range(valuation.year - 1, maturity.year + 1)
             for month in months
         ]
-        dates = np.array(sorted(date for date in dates if date <= maturity), dtype="datetime64[ns]")
+        dates = np.array(
+            sorted(date for date in dates if date <= maturity), dtype="datetime64[ns]"
+        )
 
     prev = dates[dates <= np.datetime64(valuation)][-1:]
     future = dates[dates > np.datetime64(valuation)]
@@ -67,7 +69,9 @@ def calendar(couponmonths, freq, maturity, valuation_date):
 def create_cashflows(bond, nominal=NOMINAL):
     valuation = pd.to_datetime(bond["referencedate"], dayfirst=True)
     maturity = pd.to_datetime(bond["redemptiondate"], dayfirst=True)
-    frequency = effective_frequency(bond["couponperiodicity"], bond["currentcouponrate"])
+    frequency = effective_frequency(
+        bond["couponperiodicity"], bond["currentcouponrate"]
+    )
     dates = calendar(
         bond["couponmonths"],
         frequency,
@@ -89,7 +93,9 @@ def create_cashflows(bond, nominal=NOMINAL):
         accrued = (
             0
             if pd.isna(previous_date)
-            else (valuation - previous_date).days / 365 * (bond["currentcouponrate"] * nominal)
+            else (valuation - previous_date).days
+            / 365
+            * (bond["currentcouponrate"] * nominal)
         )
         l3 = np.where(future, coupon, 0.0)
     else:
@@ -185,12 +191,15 @@ def validated_bonds(bonds, nominal=NOMINAL):
     return bonds[bonds["isincode"].isin(valid_isin)].reset_index(drop=True), comparison
 
 
-def load_cashflow_overrides(paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLOWS_PATH)):
+def load_cashflow_overrides(
+    paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLOWS_PATH),
+):
     """Load hand-validated contractual cash flows in the native output schema."""
     if isinstance(paths, (str, Path)):
         paths = (paths,)
     overrides = pd.concat(
-        [pd.read_json(path, convert_dates=["date"]) for path in paths], ignore_index=True
+        [pd.read_json(path, convert_dates=["date"]) for path in paths],
+        ignore_index=True,
     )
     required = {"isincode", "date", "l1", "l2", "l3"}
     missing = required - set(overrides.columns)
@@ -209,7 +218,9 @@ def load_cashflow_overrides(paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLO
 def apply_cashflow_overrides(cashflows, overrides, bonds):
     """Replace generated future flows for each override ISIN, without touching other bonds."""
     replacement_isins = set(overrides["isincode"])
-    reference_dates = bonds[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
+    reference_dates = (
+        bonds[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
+    )
     reference_dates["referencedate"] = pd.to_datetime(
         reference_dates["referencedate"], dayfirst=True
     )
@@ -218,7 +229,10 @@ def apply_cashflow_overrides(cashflows, overrides, bonds):
     )
     retained = cashflows_with_reference.loc[
         ~cashflows_with_reference["isincode"].isin(replacement_isins)
-        | (cashflows_with_reference["date"] <= cashflows_with_reference["referencedate"])
+        | (
+            cashflows_with_reference["date"]
+            <= cashflows_with_reference["referencedate"]
+        )
     ].drop(columns="referencedate")
     effective_overrides = overrides.merge(
         reference_dates, on="isincode", how="left", validate="many_to_one"
@@ -271,22 +285,26 @@ def build_cashflow_outputs():
     inflation_linked_bonds = all_bonds.loc[
         all_bonds["isincode"].isin(inflation_linked_isins)
     ].reset_index(drop=True)
-    missing_inflation_linked = inflation_linked_isins - set(inflation_linked_bonds["isincode"])
+    missing_inflation_linked = inflation_linked_isins - set(
+        inflation_linked_bonds["isincode"]
+    )
     if missing_inflation_linked:
         raise ValueError(
             "Inflation-linked configuration ISINs are absent from the clean universe: "
             f"{sorted(missing_inflation_linked)}"
         )
-    nominal_bonds = bonds.loc[~bonds["isincode"].isin(inflation_linked_isins)].reset_index(
-        drop=True
-    )
+    nominal_bonds = bonds.loc[
+        ~bonds["isincode"].isin(inflation_linked_isins)
+    ].reset_index(drop=True)
     cashflows = create_all_cashflows(nominal_bonds)
     cashflows = apply_cashflow_overrides(cashflows, overrides, nominal_bonds)
     inflation_cashflows = build_inflation_linked_cashflows(inflation_linked_bonds)
     cashflows = pd.concat([cashflows, inflation_cashflows], ignore_index=True)
     bonds = pd.concat([nominal_bonds, inflation_linked_bonds], ignore_index=True)
     matrix = monthly_cashflow_matrix(cashflows)
-    cashflows.to_parquet(BOND_CASHFLOWS_PATH, engine="pyarrow", compression="snappy", index=False)
+    cashflows.to_parquet(
+        BOND_CASHFLOWS_PATH, engine="pyarrow", compression="snappy", index=False
+    )
     matrix.to_parquet(BOND_CASHFLOW_MATRIX_PATH, engine="pyarrow", compression="snappy")
     return {
         "bonds": bonds,

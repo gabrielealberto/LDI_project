@@ -132,14 +132,18 @@ def build_baseline(
     history["date"] = pd.to_datetime(history["date"], errors="coerce")
     if history.empty or history["date"].isna().any():
         raise ValueError("History must contain valid monthly dates.")
-    if history["date"].duplicated().any() or not history["date"].dt.is_month_start.all():
+    if (
+        history["date"].duplicated().any()
+        or not history["date"].dt.is_month_start.all()
+    ):
         raise ValueError("History must contain unique month-start dates.")
     history[["foi_xt_it", "hicp_xt_ea"]] = history[["foi_xt_it", "hicp_xt_ea"]].apply(
         pd.to_numeric, errors="coerce"
     )
-    if history[["foi_xt_it", "hicp_xt_ea"]].isna().any().any() or not np.isfinite(
-        history[["foi_xt_it", "hicp_xt_ea"]].to_numpy()
-    ).all():
+    if (
+        history[["foi_xt_it", "hicp_xt_ea"]].isna().any().any()
+        or not np.isfinite(history[["foi_xt_it", "hicp_xt_ea"]].to_numpy()).all()
+    ):
         raise ValueError("History contains invalid inflation index levels.")
     if not (history[["foi_xt_it", "hicp_xt_ea"]] > 0).all().all():
         raise ValueError("History index levels must be strictly positive.")
@@ -167,32 +171,34 @@ def build_baseline(
     )
     target_log = float(np.log1p(config.annual_target))
 
+    horizons = np.arange(1, len(dates) + 1, dtype=float)
+    hicp_annual_rate = _decay(
+        hicp_start, target_log, horizons, config.convergence_half_life_months
+    )
+    spread_rate = _decay(
+        spread_start,
+        config.long_run_foi_hicp_log_spread,
+        horizons,
+        config.spread_half_life_months,
+    )
+    months = dates.month.to_numpy() - 1
+    monthly_rates = np.vstack(
+        [
+            (hicp_annual_rate + spread_rate) / 12 + foi_seasonal[months],
+            hicp_annual_rate / 12 + hicp_seasonal[months],
+        ]
+    )
     levels = history[["foi_xt_it", "hicp_xt_ea"]].iloc[-1].to_numpy(float)
-    rows = []
-    for horizon, date in enumerate(dates, start=1):
-        hicp_annual_rate = _decay(
-            hicp_start, target_log, horizon, config.convergence_half_life_months
-        )
-        spread_rate = _decay(
-            spread_start,
-            config.long_run_foi_hicp_log_spread,
-            horizon,
-            config.spread_half_life_months,
-        )
-        foi_annual_rate = hicp_annual_rate + spread_rate
-        hicp_monthly = hicp_annual_rate / 12 + hicp_seasonal[date.month - 1]
-        foi_monthly = foi_annual_rate / 12 + foi_seasonal[date.month - 1]
-        levels *= np.exp([foi_monthly, hicp_monthly])
-        rows.append(
-            {
-                "date": date,
-                "foi_xt_it": levels[0],
-                "hicp_xt_ea": levels[1],
-                "foi_hicp_log_spread": spread_rate,
-                "model_version": config.model_version,
-            }
-        )
-    baseline = pd.DataFrame(rows)
+    levels = levels[:, None] * np.exp(np.cumsum(monthly_rates, axis=1))
+    baseline = pd.DataFrame(
+        {
+            "date": dates,
+            "foi_xt_it": levels[0],
+            "hicp_xt_ea": levels[1],
+            "foi_hicp_log_spread": spread_rate,
+            "model_version": config.model_version,
+        }
+    )
     if not (baseline[["foi_xt_it", "hicp_xt_ea"]] > 0).all().all():
         raise ValueError("Baseline contains non-positive index levels.")
     # Report the actual 12-month index change implied by the generated levels,
@@ -212,4 +218,6 @@ def write_baseline() -> None:
     baseline = build_baseline(history, forecast_end_date())
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     baseline.to_parquet(OUTPUT_PATH, index=False, engine="pyarrow")
-    logging.info("Baseline written: %s to %s", baseline.date.iloc[0], baseline.date.iloc[-1])
+    logging.info(
+        "Baseline written: %s to %s", baseline.date.iloc[0], baseline.date.iloc[-1]
+    )

@@ -39,6 +39,10 @@ class LiabilityConfigurationTests(unittest.TestCase):
             inflation_rate=0.025,
         )
         dates, cashflows = Cf_engine(liability).to_cf()
-        payments = list(zip(dates[cashflows > 0].strftime("%Y-%m-%d"), cashflows[cashflows > 0]))
+        payments = list(
+            zip(dates[cashflows > 0].strftime("%Y-%m-%d"), cashflows[cashflows > 0])
+        )
 
-        self.assertEqual(payments, [("2028-01-01", 5000.0), ("2035-01-01", 5000.0 * 1.025**7)])
+        self.assertEqual(
+            payments, [("2028-01-01", 5000.0), ("2035-01-01", 5000.0 * 1.025**7)]
+        )

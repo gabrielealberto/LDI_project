@@ -41,10 +41,16 @@ def _monthly_after_tax_cashflows(cashflows: pd.DataFrame, lots: pd.Series) -> pd
     frame = cashflows.copy()
     frame["isincode"] = frame["isincode"].astype(str)
     frame["date"] = pd.to_datetime(frame["date"])
-    frame = frame.merge(lots.rename("lots"), left_on="isincode", right_index=True, how="inner")
-    frame["after_tax_eur"] = after_tax_cashflow_values(frame, COUPON_TAX_RATE) * frame["lots"]
+    frame = frame.merge(
+        lots.rename("lots"), left_on="isincode", right_index=True, how="inner"
+    )
+    frame["after_tax_eur"] = (
+        after_tax_cashflow_values(frame, COUPON_TAX_RATE) * frame["lots"]
+    )
     frame["month"] = frame["date"].dt.to_period("M").astype(str)
-    per_isin_month = frame.groupby(["isincode", "month"])["after_tax_eur"].sum().clip(lower=0)
+    per_isin_month = (
+        frame.groupby(["isincode", "month"])["after_tax_eur"].sum().clip(lower=0)
+    )
     return per_isin_month.groupby(level="month").sum().sort_index().astype(float)
 
 
@@ -61,12 +67,17 @@ def _frozen_asset_cashflows(
     if missing := required - set(portfolio):
         raise ValueError(f"Portfolio is missing columns: {sorted(missing)}")
     lots = pd.to_numeric(portfolio["lots"], errors="coerce")
-    if lots.isna().any() or not np.isfinite(lots).all() or not (lots > 0).all() or not np.all(
-        np.equal(lots, np.rint(lots))
+    if (
+        lots.isna().any()
+        or not np.isfinite(lots).all()
+        or not (lots > 0).all()
+        or not np.all(np.equal(lots, np.rint(lots)))
     ):
         raise ValueError("Frozen portfolio lots must be positive finite integers.")
     frozen_lots = pd.Series(
-        np.rint(lots).astype(int).to_numpy(), index=portfolio["isincode"].astype(str), name="lots"
+        np.rint(lots).astype(int).to_numpy(),
+        index=portfolio["isincode"].astype(str),
+        name="lots",
     )
     if frozen_lots.index.duplicated().any():
         raise ValueError("Frozen portfolio contains duplicate ISIN positions.")
@@ -75,7 +86,9 @@ def _frozen_asset_cashflows(
     selected = market.loc[market["isincode"].isin(frozen_lots.index)].copy()
     missing_market = sorted(set(frozen_lots.index) - set(selected["isincode"]))
     if missing_market:
-        raise ValueError(f"Frozen portfolio ISINs absent from bond metadata: {missing_market}")
+        raise ValueError(
+            f"Frozen portfolio ISINs absent from bond metadata: {missing_market}"
+        )
 
     indexed_isins = set(load_inflation_linked_bond_types())
     selected_indexed = selected.loc[selected["isincode"].isin(indexed_isins)]
@@ -87,8 +100,12 @@ def _frozen_asset_cashflows(
     expected_nominal = set(frozen_lots.index) - indexed_isins
     actual_nominal = set(nominal_cashflows["isincode"])
     if missing_nominal := sorted(expected_nominal - actual_nominal):
-        raise ValueError(f"Frozen nominal positions have no detailed cash flows: {missing_nominal}")
-    reference_dates = selected[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
+        raise ValueError(
+            f"Frozen nominal positions have no detailed cash flows: {missing_nominal}"
+        )
+    reference_dates = (
+        selected[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
+    )
     reference_dates["referencedate"] = pd.to_datetime(
         reference_dates["referencedate"], dayfirst=True
     )
@@ -96,7 +113,8 @@ def _frozen_asset_cashflows(
         baseline_cashflows["isincode"].isin(set(selected_indexed["isincode"]))
     ].merge(reference_dates, on="isincode", how="inner", validate="many_to_one")
     historical_indexed = historical_indexed.loc[
-        pd.to_datetime(historical_indexed["date"]) <= historical_indexed["referencedate"]
+        pd.to_datetime(historical_indexed["date"])
+        <= historical_indexed["referencedate"]
     ].drop(columns="referencedate")
     stressed_indexed = build_inflation_linked_cashflows(
         selected_indexed, provider=scenario_provider, require_all_terms=False
@@ -116,7 +134,9 @@ def _frozen_asset_cashflows(
     return _monthly_after_tax_cashflows(detailed, frozen_lots)
 
 
-def replay_frozen_cashflows(asset_cashflows: pd.Series, liability_dates, liabilities) -> pd.DataFrame:
+def replay_frozen_cashflows(
+    asset_cashflows: pd.Series, liability_dates, liabilities
+) -> pd.DataFrame:
     """Calculate funding needed to keep a frozen portfolio cash account non-negative."""
     asset = asset_cashflows.copy()
     asset.index = pd.PeriodIndex(asset.index, freq="M").astype(str)
@@ -187,10 +207,14 @@ def run_inflation_stress_test(
         )
         monthly = replay_frozen_cashflows(asset, dates, liabilities)
         monthly.insert(0, "scenario_id", scenario.scenario_id)
-        resolved_start_date = pd.Timestamp(stressed_baseline["resolved_start_date"].iloc[0])
+        resolved_start_date = pd.Timestamp(
+            stressed_baseline["resolved_start_date"].iloc[0]
+        )
         start_period = resolved_start_date.to_period("M")
         three_year_end = start_period + 35
-        first_deficit = monthly.loc[monthly["pre_funding_cash_balance_eur"] < 0, "month"]
+        first_deficit = monthly.loc[
+            monthly["pre_funding_cash_balance_eur"] < 0, "month"
+        ]
         summary_rows.append(
             {
                 "scenario_id": scenario.scenario_id,
@@ -220,8 +244,12 @@ def run_inflation_stress_test(
                     monthly["pre_funding_cash_balance_eur"].min()
                 ),
                 "final_cash_balance_eur": float(monthly["cash_balance_eur"].iloc[-1]),
-                "deficit_months": int((monthly["pre_funding_cash_balance_eur"] < 0).sum()),
-                "first_deficit_month": first_deficit.iloc[0] if not first_deficit.empty else None,
+                "deficit_months": int(
+                    (monthly["pre_funding_cash_balance_eur"] < 0).sum()
+                ),
+                "first_deficit_month": first_deficit.iloc[0]
+                if not first_deficit.empty
+                else None,
                 "portfolio_positions": int(len(result["portfolio"])),
                 "portfolio_lots": int(result["portfolio"]["lots"].sum()),
             }

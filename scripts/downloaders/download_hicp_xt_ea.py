@@ -57,8 +57,12 @@ def download_eurostat_series(specification: dict[str, str]) -> dict[str, Any]:
             f"Eurostat returned invalid JSON for {specification['dataset']}."
         ) from error
 
-    if payload.get("class") != "dataset" or not isinstance(payload.get("dimension"), dict):
-        raise RuntimeError(f"Unexpected JSON-stat schema for {specification['dataset']}.")
+    if payload.get("class") != "dataset" or not isinstance(
+        payload.get("dimension"), dict
+    ):
+        raise RuntimeError(
+            f"Unexpected JSON-stat schema for {specification['dataset']}."
+        )
     return payload
 
 
@@ -66,13 +70,17 @@ def _category_codes(payload: dict[str, Any], dimension: str) -> set[str]:
     try:
         index = payload["dimension"][dimension]["category"]["index"]
     except KeyError as error:
-        raise RuntimeError(f"Eurostat JSON-stat lacks dimension {dimension!r}.") from error
+        raise RuntimeError(
+            f"Eurostat JSON-stat lacks dimension {dimension!r}."
+        ) from error
     if not isinstance(index, dict):
         raise RuntimeError(f"Eurostat JSON-stat index for {dimension!r} is invalid.")
     return set(index)
 
 
-def _validate_metadata(payload: dict[str, Any], specification: dict[str, str]) -> list[str]:
+def _validate_metadata(
+    payload: dict[str, Any], specification: dict[str, str]
+) -> list[str]:
     """Ensure the response contains only the required monthly EA aggregate."""
     classification_dimension = specification["classification_dimension"]
     required = {
@@ -94,7 +102,9 @@ def _validate_metadata(payload: dict[str, Any], specification: dict[str, str]) -
     return ids
 
 
-def parse_eurostat_jsonstat(payload: dict[str, Any], specification: dict[str, str]) -> pd.DataFrame:
+def parse_eurostat_jsonstat(
+    payload: dict[str, Any], specification: dict[str, str]
+) -> pd.DataFrame:
     """Convert a one-series Eurostat JSON-stat response into dated observations."""
     dimensions = _validate_metadata(payload, specification)
     time_index = payload["dimension"]["time"]["category"]["index"]
@@ -122,7 +132,9 @@ def parse_eurostat_jsonstat(payload: dict[str, Any], specification: dict[str, st
             date = pd.Timestamp(f"{period}-01")
             value = float(raw_value)
         except (TypeError, ValueError) as error:
-            raise RuntimeError(f"Invalid Eurostat observation at {period!r}.") from error
+            raise RuntimeError(
+                f"Invalid Eurostat observation at {period!r}."
+            ) from error
         rows.append(
             {
                 "date": date,
@@ -133,7 +145,9 @@ def parse_eurostat_jsonstat(payload: dict[str, Any], specification: dict[str, st
             }
         )
     if not rows:
-        raise RuntimeError(f"Eurostat returned no observations for {specification['dataset']}.")
+        raise RuntimeError(
+            f"Eurostat returned no observations for {specification['dataset']}."
+        )
     return pd.DataFrame(rows)
 
 
@@ -149,7 +163,10 @@ def validate_series(series: pd.DataFrame, name: str) -> pd.DataFrame:
         raise ValueError(f"{name} contains null or invalid downloaded observations.")
     if not checked["date"].dt.is_month_start.all():
         raise ValueError(f"{name} contains dates that are not month starts.")
-    if not np.isfinite(checked["hicp_xt_ea"]).all() or not (checked["hicp_xt_ea"] > 0).all():
+    if (
+        not np.isfinite(checked["hicp_xt_ea"]).all()
+        or not (checked["hicp_xt_ea"] > 0).all()
+    ):
         raise ValueError(f"{name} contains non-finite or non-positive index values.")
 
     duplicates = checked[checked.duplicated("date", keep=False)]
@@ -187,7 +204,9 @@ def calculate_rebasing_factor(
     return factor, deviation
 
 
-def merge_series(historical: pd.DataFrame, current: pd.DataFrame, factor: float) -> pd.DataFrame:
+def merge_series(
+    historical: pd.DataFrame, current: pd.DataFrame, factor: float
+) -> pd.DataFrame:
     """Rebase legacy observations and prefer the current series on overlap."""
     legacy = historical.copy()
     legacy["hicp_xt_ea"] = (legacy["hicp_xt_ea"] * factor).astype("float64")
@@ -197,13 +216,17 @@ def merge_series(historical: pd.DataFrame, current: pd.DataFrame, factor: float)
     current_rows["is_rebased"] = False
 
     current_start = current_rows["date"].min()
-    combined = pd.concat([legacy[legacy["date"] < current_start], current_rows], ignore_index=True)
+    combined = pd.concat(
+        [legacy[legacy["date"] < current_start], current_rows], ignore_index=True
+    )
     combined = validate_series(combined, "merged series")
     if combined["date"].duplicated().any():
         raise ValueError("The merged series contains duplicate months.")
     mean_2025 = combined.loc[combined["date"].dt.year.eq(2025), "hicp_xt_ea"].mean()
     if not np.isfinite(mean_2025) or abs(mean_2025 - 100.0) > 2.0:
-        raise RuntimeError(f"The 2025 mean ({mean_2025:.3f}) is not close to base 2025=100.")
+        raise RuntimeError(
+            f"The 2025 mean ({mean_2025:.3f}) is not close to base 2025=100."
+        )
     return combined.drop(columns="status_flag")
 
 
@@ -216,7 +239,9 @@ def missing_months(series: pd.DataFrame) -> pd.DatetimeIndex:
 def save_parquet(series: pd.DataFrame, output_path: Path) -> None:
     """Persist the final typed series as a Parquet file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output = series[["date", "hicp_xt_ea", "source_dataset", "original_unit", "is_rebased"]].copy()
+    output = series[
+        ["date", "hicp_xt_ea", "source_dataset", "original_unit", "is_rebased"]
+    ].copy()
     output["date"] = pd.to_datetime(output["date"]).astype("datetime64[ns]")
     output["hicp_xt_ea"] = output["hicp_xt_ea"].astype("float64")
     output.to_parquet(output_path, index=False, engine="pyarrow")
@@ -232,14 +257,18 @@ def download_hicp_series() -> None:
         "historical series",
     )
     current = validate_series(
-        parse_eurostat_jsonstat(download_eurostat_series(SERIES["current"]), SERIES["current"]),
+        parse_eurostat_jsonstat(
+            download_eurostat_series(SERIES["current"]), SERIES["current"]
+        ),
         "current series",
     )
     factor, deviation = calculate_rebasing_factor(historical, current)
     merged = merge_series(historical, current, factor)
     missing = missing_months(merged)
     if len(missing):
-        logging.warning("Missing monthly observations: %s", ", ".join(missing.strftime("%Y-%m-%d")))
+        logging.warning(
+            "Missing monthly observations: %s", ", ".join(missing.strftime("%Y-%m-%d"))
+        )
     save_parquet(merged, OUTPUT_PATH)
 
     check = pd.read_parquet(OUTPUT_PATH)

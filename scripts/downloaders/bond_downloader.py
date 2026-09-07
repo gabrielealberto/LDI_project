@@ -69,7 +69,9 @@ class BondDownloader:
 
         content_type = response.headers.get("content-type", "")
         if "csv" not in content_type.lower() and not url.lower().endswith(".csv"):
-            raise ValueError(f"Unexpected response from {url}: content-type {content_type!r}")
+            raise ValueError(
+                f"Unexpected response from {url}: content-type {content_type!r}"
+            )
 
         return response.content
 

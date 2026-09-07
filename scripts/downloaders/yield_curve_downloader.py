@@ -61,7 +61,9 @@ class ECBDownloader:
             df["TIME_PERIOD"] = pd.to_datetime(df["TIME_PERIOD"])
             df["VALUE"] = pd.to_numeric(df["OBS_VALUE"])
         except (TypeError, ValueError) as error:
-            raise ValueError("The ECB response contains an invalid date or value.") from error
+            raise ValueError(
+                "The ECB response contains an invalid date or value."
+            ) from error
         df["PARAMETER"] = df["DATA_TYPE_FM"]
         df = df.dropna(subset=["TIME_PERIOD", "VALUE", "PARAMETER"])
 

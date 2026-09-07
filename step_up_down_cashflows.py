@@ -109,7 +109,9 @@ def schedule_for_bond(isincode, terms, nominal=NOMINAL):
     maturity = pd.Timestamp(terms["maturity_date"])
     months = 12 // terms["frequency"]
     dates = pd.date_range(
-        issue + pd.DateOffset(months=months), maturity, freq=pd.DateOffset(months=months)
+        issue + pd.DateOffset(months=months),
+        maturity,
+        freq=pd.DateOffset(months=months),
     )
     rates = np.repeat(terms["annual_rates"], terms["period_counts"])
     if len(dates) != len(rates) or dates[-1] != maturity:
@@ -146,9 +148,9 @@ def calculated_ytm(schedule, market_row, nominal=NOMINAL):
             "l3": [0.0],
         }
     )
-    contractual = flows.assign(l1=flows["principal_eur"], l2=0.0, l3=flows["coupon_eur"])[
-        ["isincode", "date", "l1", "l2", "l3"]
-    ]
+    contractual = flows.assign(
+        l1=flows["principal_eur"], l2=0.0, l3=flows["coupon_eur"]
+    )[["isincode", "date", "l1", "l2", "l3"]]
     contractual = contractual.loc[contractual["date"] > valuation_date]
     return gross_ytm(pd.concat([purchase, contractual], ignore_index=True)) * 100
 
@@ -185,7 +187,9 @@ def build_and_validate():
                 "ytm_source_percentage": ytm_source,
                 "ytm_calculated_percentage": ytm_calculated,
                 "difference_percentage_points": difference,
-                "matches": bool(np.isclose(ytm_calculated, ytm_source, atol=YTM_TOLERANCE)),
+                "matches": bool(
+                    np.isclose(ytm_calculated, ytm_source, atol=YTM_TOLERANCE)
+                ),
                 "cashflow_count": len(schedule),
             }
         )

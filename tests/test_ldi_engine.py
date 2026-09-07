@@ -36,7 +36,9 @@ class LDIOptimizerTests(unittest.TestCase):
         self.assertEqual(result["portfolio"].iloc[0]["isincode"], "EARLY")
 
     def test_cash_balance_can_carry_early_coupon(self):
-        target = pd.DataFrame({"date": ["2030-01-01", "2030-02-01"], "cashflow": [500.0, 500.0]})
+        target = pd.DataFrame(
+            {"date": ["2030-01-01", "2030-02-01"], "cashflow": [500.0, 500.0]}
+        )
         result = optimize_cashflow_matching(
             target, self.matrix, self.bonds, terminal_capital_ratio=0
         )
@@ -54,13 +56,18 @@ class LDIOptimizerTests(unittest.TestCase):
         self.assertEqual(result["uncovered_eur"], 0.0)
         self.assertEqual(result["portfolio"].iloc[0]["lots"], 2)
         self.assertGreaterEqual(
-            result["terminal_portfolio_cash_eur"], result["terminal_capital_required_eur"]
+            result["terminal_portfolio_cash_eur"],
+            result["terminal_capital_required_eur"],
         )
 
     def test_nominal_cap_limits_lots_and_reports_gap(self):
         target = pd.DataFrame({"date": ["2030-02-01"], "cashflow": [3_000.0]})
         result = optimize_cashflow_matching(
-            target, self.matrix, self.bonds, max_nominal_per_bond=1_000, terminal_capital_ratio=0
+            target,
+            self.matrix,
+            self.bonds,
+            max_nominal_per_bond=1_000,
+            terminal_capital_ratio=0,
         )
 
         self.assertTrue((result["portfolio"]["lots"] <= 1).all())
@@ -103,7 +110,11 @@ class LDIOptimizerTests(unittest.TestCase):
         target = pd.DataFrame({"date": ["2030-01-01"], "cashflow": [1_000.0]})
         bonds = self.bonds.assign(issuercode="ONLY")
         result = optimize_cashflow_matching(
-            target, self.matrix, bonds, max_nominal_per_bond=1_000, terminal_capital_ratio=0
+            target,
+            self.matrix,
+            bonds,
+            max_nominal_per_bond=1_000,
+            terminal_capital_ratio=0,
         )
 
         self.assertTrue(result["portfolio"].empty)
@@ -138,12 +149,16 @@ class LDIOptimizerTests(unittest.TestCase):
             referencedate="01/01/2030",
         )
         result = optimize_cashflow_matching(
-            target, self.matrix, bonds, max_nominal_per_bond=2_000, terminal_capital_ratio=0
+            target,
+            self.matrix,
+            bonds,
+            max_nominal_per_bond=2_000,
+            terminal_capital_ratio=0,
         )
         portfolio = result["portfolio"]
         self.assertEqual(sorted(portfolio["lots"]), [1, 2])
-        expected = (portfolio["maturity_years"] * portfolio["cost_eur"]).sum() / portfolio[
-            "cost_eur"
-        ].sum()
+        expected = (
+            portfolio["maturity_years"] * portfolio["cost_eur"]
+        ).sum() / portfolio["cost_eur"].sum()
 
         self.assertAlmostEqual(result["weighted_average_maturity_years"], expected)

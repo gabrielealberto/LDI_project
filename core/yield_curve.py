@@ -11,7 +11,9 @@ def load_svensson_params(csv_path, curve_id):
     _ = curve_id
     df = pd.read_parquet(csv_path)
     params = df.set_index("PARAMETER")["VALUE"]
-    return params[["BETA0", "BETA1", "BETA2", "BETA3", "TAU1", "TAU2"]].to_numpy(dtype=float)
+    return params[["BETA0", "BETA1", "BETA2", "BETA3", "TAU1", "TAU2"]].to_numpy(
+        dtype=float
+    )
 
 
 def svensson_yield(t, beta0, beta1, beta2, beta3, tau1, tau2):

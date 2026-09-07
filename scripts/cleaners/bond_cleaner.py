@@ -36,7 +36,9 @@ def liquid_bonds(
     try:
         threshold = float(min_daily_volume)
     except (TypeError, ValueError) as error:
-        raise ValueError("min_daily_volume must be a finite non-negative number") from error
+        raise ValueError(
+            "min_daily_volume must be a finite non-negative number"
+        ) from error
     if not math.isfinite(threshold) or threshold < 0:
         raise ValueError("min_daily_volume must be a finite non-negative number")
 
@@ -65,7 +67,9 @@ def clean_fd(df, min_daily_volume=MIN_DAILY_BOND_VOLUME):
     cleaned = cleaned[~(low_sp | low_moodys)]
     report["rating"] = len(cleaned)
 
-    has_sp = cleaned["ratingsp"].notna() & cleaned["ratingsp"].astype(str).str.strip().ne("")
+    has_sp = cleaned["ratingsp"].notna() & cleaned["ratingsp"].astype(
+        str
+    ).str.strip().ne("")
     has_moodys = cleaned["ratingmoodys"].notna() & cleaned["ratingmoodys"].astype(
         str
     ).str.strip().ne("")

@@ -52,7 +52,10 @@ class InflationLinkedCashflowTests(unittest.TestCase):
             "issue_date": "2025-01-15",
             "maturity_date": "2026-01-15",
             "real_annual_coupon_rate": 0.02,
-            "cashflow_schedule": {"frequency_per_year": 2, "first_coupon_date": "2025-07-15"},
+            "cashflow_schedule": {
+                "frequency_per_year": 2,
+                "first_coupon_date": "2025-07-15",
+            },
             "indexation": {
                 "index_id": "HICP_XT_EA",
                 "observation_lag_months": 3,
@@ -83,7 +86,10 @@ class InflationLinkedCashflowTests(unittest.TestCase):
             "issue_date": "2025-01-15",
             "maturity_date": "2026-01-15",
             "real_annual_coupon_rate": 0.02,
-            "cashflow_schedule": {"frequency_per_year": 2, "first_coupon_date": "2025-07-15"},
+            "cashflow_schedule": {
+                "frequency_per_year": 2,
+                "first_coupon_date": "2025-07-15",
+            },
             "indexation": {"index_id": "FOI_XT_IT", "observation_lag_months": 3},
         }
 

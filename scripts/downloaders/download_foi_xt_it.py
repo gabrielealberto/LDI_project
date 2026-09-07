@@ -58,9 +58,13 @@ def download_pre_1996() -> pd.DataFrame:
         raise RuntimeError(
             "ISTAT FOI(nt) historical workbook is unavailable or invalid."
         ) from error
-    marker = raw.index[raw.iloc[:, 0].astype(str).str.contains("Base 1992=100", na=False)]
+    marker = raw.index[
+        raw.iloc[:, 0].astype(str).str.contains("Base 1992=100", na=False)
+    ]
     if len(marker) != 1:
-        raise RuntimeError("ISTAT workbook does not expose the expected 1992-base FOI segment.")
+        raise RuntimeError(
+            "ISTAT workbook does not expose the expected 1992-base FOI segment."
+        )
     factor = 1 / (1.141 * 1.373 * 1.071 * 1.214)
     rows = []
     row_1992 = raw.iloc[marker[0] - 1]
@@ -100,7 +104,9 @@ def download_pre_1996() -> pd.DataFrame:
                     }
                 )
     if len(rows) != 47:
-        raise RuntimeError(f"Expected 47 official pre-1996 FOI observations, got {len(rows)}.")
+        raise RuntimeError(
+            f"Expected 47 official pre-1996 FOI observations, got {len(rows)}."
+        )
     return pd.DataFrame(rows)
 
 
@@ -126,19 +132,35 @@ def parse_observations(
         if len(values) != 1:
             raise RuntimeError(f"ISTAT response for {flow} contains multiple series.")
         labels[dimension["id"]] = values[0].get("name", "")
-        if dimension["id"] in expected and values[0].get("id") != expected[dimension["id"]]:
+        if (
+            dimension["id"] in expected
+            and values[0].get("id") != expected[dimension["id"]]
+        ):
             raise RuntimeError(f"Unexpected {dimension['id']} in {flow}.")
     indicator = labels.get("DATA_TYPE", "").lower()
-    if "famiglie di operai" not in indicator and "blue and white-collar" not in indicator:
+    if (
+        "famiglie di operai" not in indicator
+        and "blue and white-collar" not in indicator
+    ):
         raise RuntimeError(f"{flow} is not the FOI index.")
     category = next(
-        (value for d in series_dimensions if "COICOP" in d["id"] for value in d["values"]), {}
+        (
+            value
+            for d in series_dimensions
+            if "COICOP" in d["id"]
+            for value in d["values"]
+        ),
+        {},
     )
     category_name = category.get("name", "").lower()
-    if category.get("id") != "00ST" or not ("tabac" in category_name or "tobacco" in category_name):
+    if category.get("id") != "00ST" or not (
+        "tabac" in category_name or "tobacco" in category_name
+    ):
         raise RuntimeError(f"{flow} is not the all-items excluding-tobacco series.")
     if len(series) != 1:
-        raise RuntimeError(f"ISTAT returned more than one observation series for {flow}.")
+        raise RuntimeError(
+            f"ISTAT returned more than one observation series for {flow}."
+        )
     periods = observation_dimension.get("values", [])
     observations = next(iter(series.values())).get("observations", {})
     rows = []
@@ -167,12 +189,19 @@ def validate_series(frame: pd.DataFrame) -> pd.DataFrame:
         raise RuntimeError("ISTAT returned no observations.")
     frame = frame.copy()
     frame["date"] = pd.to_datetime(frame["date"])
-    frame["foi_xt_it"] = pd.to_numeric(frame["foi_xt_it"], errors="coerce").astype("float64")
-    if frame[["date", "foi_xt_it"]].isna().any().any() or not (frame["foi_xt_it"] > 0).all():
+    frame["foi_xt_it"] = pd.to_numeric(frame["foi_xt_it"], errors="coerce").astype(
+        "float64"
+    )
+    if (
+        frame[["date", "foi_xt_it"]].isna().any().any()
+        or not (frame["foi_xt_it"] > 0).all()
+    ):
         raise RuntimeError("FOI has null, invalid, or non-positive observations.")
     if not frame["date"].dt.is_month_start.all():
         raise RuntimeError("FOI dates are not month starts.")
-    frame = frame.sort_values(["date", "rebase_factor"]).drop_duplicates("date", keep="last")
+    frame = frame.sort_values(["date", "rebase_factor"]).drop_duplicates(
+        "date", keep="last"
+    )
     periods = pd.PeriodIndex(frame["date"], freq="M").asi8
     missing = pd.period_range(frame["date"].min(), frame["date"].max(), freq="M").asi8
     absent = sorted(set(missing) - set(periods))
@@ -182,7 +211,9 @@ def validate_series(frame: pd.DataFrame) -> pd.DataFrame:
         )
     mean_2025 = frame.loc[frame.date.dt.year.eq(2025), "foi_xt_it"].mean()
     if not np.isfinite(mean_2025) or abs(mean_2025 - 100) > 2:
-        raise RuntimeError(f"2025 average is incompatible with base 2025=100: {mean_2025}")
+        raise RuntimeError(
+            f"2025 average is incompatible with base 2025=100: {mean_2025}"
+        )
     return frame.reset_index(drop=True)
 
 
@@ -191,7 +222,9 @@ def download_foi_series() -> None:
     frames = [download_pre_1996()]
     logging.info("ISTAT_Rivaluta_FOI_nt: %s observations (1992=100)", len(frames[0]))
     for flow, key, base, coefficient in SPECS:
-        frame = parse_observations(download_sdmx_data(flow, key), flow, base, coefficient)
+        frame = parse_observations(
+            download_sdmx_data(flow, key), flow, base, coefficient
+        )
         logging.info("%s: %s observations (%s)", flow, len(frame), base)
         frames.append(frame)
     result = validate_series(pd.concat(frames, ignore_index=True))

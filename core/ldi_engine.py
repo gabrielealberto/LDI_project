@@ -63,7 +63,9 @@ def annualized_return(initial_cost, months, cashflows):
     dates = pd.PeriodIndex(months, freq="M").to_timestamp(how="end")
     start = pd.Period(months[0], freq="M").to_timestamp(how="start")
     amounts = np.concatenate([[-initial_cost], np.asarray(cashflows, dtype=float)])
-    years = np.concatenate([[0.0], ((dates - start) / pd.Timedelta(days=365.25)).to_numpy()])
+    years = np.concatenate(
+        [[0.0], ((dates - start) / pd.Timedelta(days=365.25)).to_numpy()]
+    )
 
     def npv(rate):
         return np.sum(amounts / (1 + rate) ** years)
@@ -179,9 +181,13 @@ def optimize_cashflow_matching(
         .tolist()
     )
     target = liabilities.reindex(months, fill_value=0.0)
-    matrix, metadata = _eligible_bonds(bond_matrix, bonds, months, liabilities.index.min())
+    matrix, metadata = _eligible_bonds(
+        bond_matrix, bonds, months, liabilities.index.min()
+    )
     if matrix.empty:
-        raise ValueError("No eligible bonds with valid future cash flows in liability months.")
+        raise ValueError(
+            "No eligible bonds with valid future cash flows in liability months."
+        )
 
     # The negative purchase flow is paid today through the objective.  It is
     # not an operating portfolio cash flow; all later coupons/redemptions are.
@@ -213,7 +219,9 @@ def optimize_cashflow_matching(
         redemption = pd.to_datetime(metadata["redemptiondate"], dayfirst=True)
         reference = pd.to_datetime(metadata["referencedate"], dayfirst=True)
         maturity_years = (
-            ((redemption - reference) / pd.Timedelta(days=365.25)).clip(lower=0).to_numpy()
+            ((redemption - reference) / pd.Timedelta(days=365.25))
+            .clip(lower=0)
+            .to_numpy()
         )
     else:
         maturity_years = np.zeros(n_bonds)
@@ -332,10 +340,12 @@ def optimize_cashflow_matching(
         for code in np.unique(issuer):
             issuer_segments = issuer[segment_bonds] == code
             lot_concentration = (
-                segment_lot_costs * issuer_segments - max_issuer_weight * segment_lot_costs
+                segment_lot_costs * issuer_segments
+                - max_issuer_weight * segment_lot_costs
             )
             fee_concentration = (
-                segment_fixed_fees * issuer_segments - max_issuer_weight * segment_fixed_fees
+                segment_fixed_fees * issuer_segments
+                - max_issuer_weight * segment_fixed_fees
             )
             constraints.append(
                 LinearConstraint(
@@ -357,11 +367,14 @@ def optimize_cashflow_matching(
         terminal_constraint = hstack(
             [
                 csr_matrix(
-                    (terminal_asset_cashflows - terminal_capital_ratio * segment_lot_costs).reshape(
-                        1, -1
-                    )
+                    (
+                        terminal_asset_cashflows
+                        - terminal_capital_ratio * segment_lot_costs
+                    ).reshape(1, -1)
                 ),
-                csr_matrix((-terminal_capital_ratio * segment_fixed_fees).reshape(1, -1)),
+                csr_matrix(
+                    (-terminal_capital_ratio * segment_fixed_fees).reshape(1, -1)
+                ),
                 csr_matrix((1, n_months)),
             ]
         )
@@ -376,7 +389,9 @@ def optimize_cashflow_matching(
     integrality = np.concatenate([np.ones(2 * n_segments), np.zeros(n_months)])
     bounds = Bounds(
         np.zeros(2 * n_segments + n_months),
-        np.concatenate([segment_max_lots, np.ones(n_segments), np.full(n_months, np.inf)]),
+        np.concatenate(
+            [segment_max_lots, np.ones(n_segments), np.full(n_months, np.inf)]
+        ),
     )
     coverage_solution = milp(
         c=np.concatenate([np.zeros(2 * n_segments), np.ones(n_months)]),
@@ -411,7 +426,9 @@ def optimize_cashflow_matching(
         raise RuntimeError(f"Optimization not solved: {solution.message}")
 
     segment_lots = np.rint(solution.x[:n_segments]).astype(int)
-    lots = np.bincount(segment_bonds, weights=segment_lots, minlength=n_bonds).astype(int)
+    lots = np.bincount(segment_bonds, weights=segment_lots, minlength=n_bonds).astype(
+        int
+    )
     external_cash = solution.x[2 * n_segments :]
     selected = lots > 0
     output_columns = [
@@ -427,16 +444,24 @@ def optimize_cashflow_matching(
         if column in metadata
     ]
     portfolio = (
-        metadata.loc[selected, output_columns].reset_index().rename(columns={"index": "isincode"})
+        metadata.loc[selected, output_columns]
+        .reset_index()
+        .rename(columns={"index": "isincode"})
     )
     portfolio["lots"] = lots[selected]
     portfolio["nominal_eur"] = portfolio["lots"] * NOMINAL
     portfolio["purchase_value_eur"] = costs[selected] * portfolio["lots"].to_numpy()
-    portfolio["purchase_commission_eur"] = broker_commission(portfolio["purchase_value_eur"])
+    portfolio["purchase_commission_eur"] = broker_commission(
+        portfolio["purchase_value_eur"]
+    )
     portfolio["sale_commission_eur"] = 0.0
-    portfolio["cost_eur"] = portfolio["purchase_value_eur"] + portfolio["purchase_commission_eur"]
+    portfolio["cost_eur"] = (
+        portfolio["purchase_value_eur"] + portfolio["purchase_commission_eur"]
+    )
     portfolio["maturity_years"] = maturity_years[selected]
-    portfolio = portfolio.sort_values("cost_eur", ascending=False).reset_index(drop=True)
+    portfolio = portfolio.sort_values("cost_eur", ascending=False).reset_index(
+        drop=True
+    )
 
     full_assets = full_cashflows @ lots
     full_external_cash = np.zeros(len(full_months))
@@ -450,7 +475,9 @@ def optimize_cashflow_matching(
         }
     )
     match["net_cashflow_eur"] = (
-        match["asset_cashflow_eur"] + match["external_cash_eur"] - match["liability_eur"]
+        match["asset_cashflow_eur"]
+        + match["external_cash_eur"]
+        - match["liability_eur"]
     )
     match["cash_balance_eur"] = match["net_cashflow_eur"].cumsum()
     total_cost = portfolio["cost_eur"].sum()
@@ -482,7 +509,9 @@ def optimize_cashflow_matching(
         "roi": total_inflows / total_cost - 1 if total_cost > 0 else np.nan,
         "total_return_eur": total_inflows - total_cost,
         "annualized_return": (
-            annualized_return(total_cost, full_months, full_assets) if total_cost > 0 else np.nan
+            annualized_return(total_cost, full_months, full_assets)
+            if total_cost > 0
+            else np.nan
         ),
     }
 
@@ -492,7 +521,9 @@ def print_purchase_plan(result):
     portfolio = result["portfolio"].copy()
     total_cost = portfolio["cost_eur"].sum()
     print("\nMONTHLY LDI PURCHASE PLAN")
-    print(f"Selected bonds: {len(portfolio)} | Estimated investment: EUR {total_cost:,.2f}")
+    print(
+        f"Selected bonds: {len(portfolio)} | Estimated investment: EUR {total_cost:,.2f}"
+    )
     print(f"ISIN limit: EUR {result['max_nominal_per_bond']:,.0f} nominal")
     print(
         f"Coupon tax: {result['coupon_tax_rate']:.1%} | Max issuer: {result['max_issuer_weight']:.0%} | Max positions: {result['max_positions']}"
@@ -503,7 +534,9 @@ def print_purchase_plan(result):
         if result["prefer_short_maturity"]
         else "No maturity preference"
     )
-    rating_columns = [column for column in ("ratingsp", "ratingmoodys") if column in portfolio]
+    rating_columns = [
+        column for column in ("ratingsp", "ratingmoodys") if column in portfolio
+    ]
     if rating_columns:
         # Credit ratings are ordinal categories, so a median is more meaningful
         # than an arithmetic mean. Prefer S&P and fall back to Moody's per bond.
@@ -529,19 +562,28 @@ def print_purchase_plan(result):
             "C": 19,
             "D": 20,
         }
-        ratings = portfolio[rating_columns].replace({"": np.nan}).bfill(axis=1).iloc[:, 0]
+        ratings = (
+            portfolio[rating_columns].replace({"": np.nan}).bfill(axis=1).iloc[:, 0]
+        )
         ordinal = ratings.astype(str).str.strip().str.upper().map(rating_scale)
-        rated = portfolio.loc[ordinal.notna(), ["cost_eur"]].assign(rating_score=ordinal.dropna())
+        rated = portfolio.loc[ordinal.notna(), ["cost_eur"]].assign(
+            rating_score=ordinal.dropna()
+        )
         if not rated.empty and rated["cost_eur"].sum() > 0:
             rated = rated.sort_values("rating_score")
             midpoint = rated["cost_eur"].sum() / 2
             median_score = float(
-                rated.loc[rated["cost_eur"].cumsum().ge(midpoint), "rating_score"].iloc[0]
+                rated.loc[rated["cost_eur"].cumsum().ge(midpoint), "rating_score"].iloc[
+                    0
+                ]
             )
             median_rating = min(
-                rating_scale, key=lambda rating: abs(rating_scale[rating] - median_score)
+                rating_scale,
+                key=lambda rating: abs(rating_scale[rating] - median_score),
             )
-            print(f"Weighted median credit rating: {median_rating} ({len(rated)} rated positions)")
+            print(
+                f"Weighted median credit rating: {median_rating} ({len(rated)} rated positions)"
+            )
     print(f"Residual shortfall: EUR {result['uncovered_eur']:,.2f}")
     terminal_capital = result["terminal_portfolio_cash_eur"]
     terminal_capital_ratio = terminal_capital / total_cost if total_cost else 0.0

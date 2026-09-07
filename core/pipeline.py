@@ -9,7 +9,9 @@ from .inflation_baseline import write_baseline as build_inflation_baseline
 from scripts.cleaners import bond_cleaner
 from scripts.downloaders.bond_downloader import BondDownloader
 from scripts.downloaders.download_foi_xt_it import download_foi_series as download_foi
-from scripts.downloaders.download_hicp_xt_ea import download_hicp_series as download_hicp
+from scripts.downloaders.download_hicp_xt_ea import (
+    download_hicp_series as download_hicp,
+)
 from scripts.downloaders.yield_curve_downloader import ECBDownloader
 from .utils import (
     BOND_CASHFLOWS_PATH,

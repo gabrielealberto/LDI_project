@@ -57,5 +57,7 @@ class ConfigurationContractTests(unittest.TestCase):
         types = load_inflation_linked_bond_types()
 
         self.assertGreater(len(types), 0)
-        self.assertTrue(set(types.values()).issubset({"btpei", "btp_italia", "btp_italia_si"}))
+        self.assertTrue(
+            set(types.values()).issubset({"btpei", "btp_italia", "btp_italia_si"})
+        )
         self.assertEqual(len(types), len(set(types)))

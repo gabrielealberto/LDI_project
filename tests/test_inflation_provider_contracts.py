@@ -10,7 +10,10 @@ from core.inflation_linked_cashflows import build_index_provider
 class InflationProviderContractTests(unittest.TestCase):
     def _write_series(self, path, column, values):
         pd.DataFrame(
-            {"date": pd.date_range("2020-01-01", periods=len(values), freq="MS"), column: values}
+            {
+                "date": pd.date_range("2020-01-01", periods=len(values), freq="MS"),
+                column: values,
+            }
         ).to_parquet(path, index=False)
 
     def test_reference_level_interpolates_between_lagged_months(self):
@@ -29,7 +32,9 @@ class InflationProviderContractTests(unittest.TestCase):
             )
             provider = build_index_provider(baseline, foi, hicp)
 
-            value = provider.reference_level("FOI_XT_IT", pd.Timestamp("2020-06-15"), lag_months=3)
+            value = provider.reference_level(
+                "FOI_XT_IT", pd.Timestamp("2020-06-15"), lag_months=3
+            )
 
         self.assertAlmostEqual(value, 102.4666666667, places=8)
 

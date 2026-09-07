@@ -60,8 +60,12 @@ class PipelineRefreshTests(unittest.TestCase):
                 self.matrix.touch(),
             )
         )
-        foi_downloader = Mock(side_effect=lambda: (actions.append("foi"), self.foi.touch()))
-        hicp_downloader = Mock(side_effect=lambda: (actions.append("hicp"), self.hicp.touch()))
+        foi_downloader = Mock(
+            side_effect=lambda: (actions.append("foi"), self.foi.touch())
+        )
+        hicp_downloader = Mock(
+            side_effect=lambda: (actions.append("hicp"), self.hicp.touch())
+        )
         baseline_builder = Mock(
             side_effect=lambda: (actions.append("baseline"), self.baseline.touch())
         )
@@ -128,7 +132,9 @@ class PipelineRefreshTests(unittest.TestCase):
         )
 
     def test_backward_compatible_entry_point_performs_full_refresh(self):
-        with patch.object(pipeline, "refresh_ldi_inputs", return_value=["refreshed"]) as refresh:
+        with patch.object(
+            pipeline, "refresh_ldi_inputs", return_value=["refreshed"]
+        ) as refresh:
             completed = pipeline.ensure_ldi_inputs()
 
         self.assertEqual(completed, ["refreshed"])

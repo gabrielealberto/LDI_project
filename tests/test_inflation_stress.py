@@ -11,7 +11,10 @@ from core.inflation_stress import (
     load_inflation_stresses,
 )
 from core.inflation_baseline import build_baseline
-from core.inflation_stress_testing import _monthly_after_tax_cashflows, replay_frozen_cashflows
+from core.inflation_stress_testing import (
+    _monthly_after_tax_cashflows,
+    replay_frozen_cashflows,
+)
 
 
 class InflationStressTests(unittest.TestCase):
@@ -62,12 +65,19 @@ class InflationStressTests(unittest.TestCase):
             stressed.loc[before, ["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
             self.baseline.loc[before, ["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
         )
-        self.assertGreater(stressed["foi_xt_it"].iloc[-1], self.baseline["foi_xt_it"].iloc[-1])
-        self.assertGreater(stressed["hicp_xt_ea"].iloc[-1], self.baseline["hicp_xt_ea"].iloc[-1])
+        self.assertGreater(
+            stressed["foi_xt_it"].iloc[-1], self.baseline["foi_xt_it"].iloc[-1]
+        )
+        self.assertGreater(
+            stressed["hicp_xt_ea"].iloc[-1], self.baseline["hicp_xt_ea"].iloc[-1]
+        )
 
     def test_basis_point_shock_is_converted_to_a_monthly_log_rate(self):
         scenario = InflationShock(
-            "rate", pd.Timestamp("2026-01-01"), common_annual_shock_bp=120, ramp_months=1
+            "rate",
+            pd.Timestamp("2026-01-01"),
+            common_annual_shock_bp=120,
+            ramp_months=1,
         )
         stressed = build_stressed_baseline(self.baseline, self.history, scenario)
         expected_ratio = np.exp(0.012 / 12)
@@ -129,7 +139,9 @@ class InflationStressTests(unittest.TestCase):
             stressed.iloc[:3][["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
             self.baseline.iloc[:3][["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
         )
-        self.assertGreater(stressed["hicp_xt_ea"].iloc[-1], self.baseline["hicp_xt_ea"].iloc[-1])
+        self.assertGreater(
+            stressed["hicp_xt_ea"].iloc[-1], self.baseline["hicp_xt_ea"].iloc[-1]
+        )
 
     def test_regime_shift_reanchors_the_long_run_baseline(self):
         dates = pd.date_range("2016-01-01", periods=120, freq="MS")
@@ -153,7 +165,9 @@ class InflationStressTests(unittest.TestCase):
 
         self.assertEqual(reanchored["scenario_family"].iloc[0], "regime_shift")
         self.assertAlmostEqual(reanchored["hicp_yoy"].iloc[-1], 0.03, places=3)
-        self.assertGreater(reanchored["foi_yoy"].iloc[-1], reanchored["hicp_yoy"].iloc[-1])
+        self.assertGreater(
+            reanchored["foi_yoy"].iloc[-1], reanchored["hicp_yoy"].iloc[-1]
+        )
 
     def test_versioned_scenario_library_contains_all_three_families(self):
         scenarios = load_inflation_stresses()
@@ -161,7 +175,12 @@ class InflationStressTests(unittest.TestCase):
             {scenario.family for scenario in scenarios},
             {"transitory", "persistent", "regime_shift"},
         )
-        self.assertTrue(all(scenario.rationale and scenario.calibration_basis for scenario in scenarios))
+        self.assertTrue(
+            all(
+                scenario.rationale and scenario.calibration_basis
+                for scenario in scenarios
+            )
+        )
 
     def test_replay_reports_the_exact_external_cash_needed(self):
         monthly = replay_frozen_cashflows(
@@ -183,6 +202,8 @@ class InflationStressTests(unittest.TestCase):
                 "l3": [0.0, 100.0],
             }
         )
-        monthly = _monthly_after_tax_cashflows(cashflows, pd.Series([1], index=["TEST"]))
+        monthly = _monthly_after_tax_cashflows(
+            cashflows, pd.Series([1], index=["TEST"])
+        )
 
         self.assertEqual(monthly.to_dict(), {"2030-01": 0.0})
