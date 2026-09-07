@@ -22,38 +22,40 @@ def print_inflation_stress_results(stress_report):
     summary = stress_report["summary"].copy()
     labels = {
         "baseline": "Baseline",
-        "inflation_upside_200bp": "Inflazione +200 bp",
-        "inflation_downside_200bp": "Inflazione -200 bp",
-        "italy_spread_widening_100bp": "Spread Italia/EA +100 bp",
-        "italy_stagflation": "Stagflazione Italia",
-        "deflation_stress": "Stress deflazione",
+        "transitory_inflation_upside_200bp": "Inflazione transitoria +200 bp",
+        "transitory_deflation_250bp": "Deflazione transitoria -250 bp",
+        "transitory_italy_ea_spread_100bp": "Spread transitorio Italia/EA +100 bp",
+        "persistent_inflation_150bp": "Inflazione persistente +150 bp",
+        "persistent_italy_stagflation": "Stagflazione persistente Italia",
+        "regime_hicp_3pct": "Regime strategico HICP 3%",
+        "regime_hicp_1pct": "Regime strategico HICP 1%",
     }
     summary["label"] = summary["scenario_id"].map(labels).fillna(summary["scenario_id"])
     summary = summary.sort_values("external_funding_eur", ascending=False)
 
-    print("\n" + "=" * 106)
+    print("\n" + "=" * 116)
     print("ANALISI SHOCK INFLAZIONE — PORTAFOGLIO FISSO (nessuna ri-ottimizzazione)")
-    print("-" * 106)
+    print("-" * 116)
     print(
-        f"{'Scenario':<30} {'Funding esterno':>18} {'Min. cassa pre-funding':>24} "
-        f"{'Mesi deficit':>13}  Esito"
+        f"{'Famiglia':<14} {'Scenario':<35} {'Funding esterno':>18} "
+        f"{'Min. cassa pre-funding':>24} {'Mesi deficit':>13}  Esito"
     )
-    print("-" * 106)
+    print("-" * 116)
     for row in summary.itertuples(index=False):
         outcome = "ATTENZIONE" if row.external_funding_eur > 0 else "Coperto"
         print(
-            f"{row.label:<30} "
+            f"{row.scenario_family:<14} {row.label:<35} "
             f"EUR {row.external_funding_eur:>14,.2f} "
             f"EUR {row.minimum_pre_funding_cash_balance_eur:>20,.2f} "
             f"{row.deficit_months:>13}  {outcome}"
         )
     worst = summary.iloc[0]
-    print("-" * 106)
+    print("-" * 116)
     print(
         f"Worst case: {worst.label} | funding esterno EUR {worst.external_funding_eur:,.2f} | "
         f"{worst.deficit_months} mesi in deficit"
     )
-    print("=" * 106)
+    print("=" * 116)
 
 
 def main():

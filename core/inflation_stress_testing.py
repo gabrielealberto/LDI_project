@@ -187,29 +187,61 @@ def run_inflation_stress_test(
         )
         monthly = replay_frozen_cashflows(asset, dates, liabilities)
         monthly.insert(0, "scenario_id", scenario.scenario_id)
+        resolved_start_date = pd.Timestamp(stressed_baseline["resolved_start_date"].iloc[0])
+        start_period = resolved_start_date.to_period("M")
+        three_year_end = start_period + 35
+        first_deficit = monthly.loc[monthly["pre_funding_cash_balance_eur"] < 0, "month"]
         summary_rows.append(
             {
                 "scenario_id": scenario.scenario_id,
+                "scenario_family": scenario.family,
+                "severity": scenario.severity,
+                "resolved_start_date": resolved_start_date,
+                "effective_horizon_months": scenario.effective_horizon_months(),
+                "rationale": scenario.rationale,
+                "calibration_basis": scenario.calibration_basis,
+                "review_frequency_months": scenario.review_frequency_months,
                 "baseline_fingerprint": fingerprint,
                 "model_version": scenario.model_version,
                 "common_annual_shock_bp": scenario.common_annual_shock_bp,
                 "foi_hicp_spread_shock_bp": scenario.foi_hicp_spread_shock_bp,
+                "long_run_hicp_target": scenario.long_run_hicp_target,
+                "long_run_foi_hicp_spread_bp": scenario.long_run_foi_hicp_spread_bp,
                 "total_liabilities_eur": float(monthly["liability_eur"].sum()),
                 "total_asset_cashflows_eur": float(monthly["asset_cashflow_eur"].sum()),
                 "external_funding_eur": float(monthly["external_cash_eur"].sum()),
+                "external_funding_36m_eur": float(
+                    monthly.loc[
+                        pd.PeriodIndex(monthly["month"], freq="M") <= three_year_end,
+                        "external_cash_eur",
+                    ].sum()
+                ),
                 "minimum_pre_funding_cash_balance_eur": float(
                     monthly["pre_funding_cash_balance_eur"].min()
                 ),
                 "final_cash_balance_eur": float(monthly["cash_balance_eur"].iloc[-1]),
                 "deficit_months": int((monthly["pre_funding_cash_balance_eur"] < 0).sum()),
+                "first_deficit_month": first_deficit.iloc[0] if not first_deficit.empty else None,
                 "portfolio_positions": int(len(result["portfolio"])),
                 "portfolio_lots": int(result["portfolio"]["lots"].sum()),
             }
         )
         monthly_frames.append(monthly)
         paths[scenario.scenario_id] = stressed_baseline
+    summary = pd.DataFrame(summary_rows)
+    baseline_summary = summary.loc[summary["scenario_id"].eq("baseline")]
+    if len(baseline_summary) != 1:
+        raise ValueError("Stress report must contain exactly one baseline result.")
+    baseline_row = baseline_summary.iloc[0]
+    for column in (
+        "total_liabilities_eur",
+        "total_asset_cashflows_eur",
+        "external_funding_eur",
+        "external_funding_36m_eur",
+    ):
+        summary[f"delta_{column}_vs_baseline"] = summary[column] - baseline_row[column]
     return {
-        "summary": pd.DataFrame(summary_rows),
+        "summary": summary,
         "monthly": pd.concat(monthly_frames, ignore_index=True),
         "scenario_paths": paths,
     }

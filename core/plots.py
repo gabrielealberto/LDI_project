@@ -267,19 +267,23 @@ def plot_inflation_baseline(output_dir, baseline_path=INFLATION_BASELINE_PATH):
 
 _STRESS_LABELS = {
     "baseline": "Baseline",
-    "inflation_upside_200bp": "Inflation upside +200 bp",
-    "inflation_downside_200bp": "Inflation downside -200 bp",
-    "italy_spread_widening_100bp": "Italy/EA spread +100 bp",
-    "italy_stagflation": "Italy stagflation",
-    "deflation_stress": "Deflation stress",
+    "transitory_inflation_upside_200bp": "Transitory inflation +200 bp",
+    "transitory_deflation_250bp": "Transitory deflation -250 bp",
+    "transitory_italy_ea_spread_100bp": "Transitory Italy/EA spread +100 bp",
+    "persistent_inflation_150bp": "Persistent inflation +150 bp",
+    "persistent_italy_stagflation": "Persistent Italy stagflation",
+    "regime_hicp_3pct": "Regime shift HICP 3%",
+    "regime_hicp_1pct": "Regime shift HICP 1%",
 }
 _STRESS_COLORS = {
     "baseline": COLORS["ink"],
-    "inflation_upside_200bp": COLORS["red"],
-    "inflation_downside_200bp": COLORS["blue"],
-    "italy_spread_widening_100bp": COLORS["teal"],
-    "italy_stagflation": COLORS["amber"],
-    "deflation_stress": COLORS["violet"],
+    "transitory_inflation_upside_200bp": COLORS["red"],
+    "transitory_deflation_250bp": COLORS["blue"],
+    "transitory_italy_ea_spread_100bp": COLORS["teal"],
+    "persistent_inflation_150bp": COLORS["amber"],
+    "persistent_italy_stagflation": "#7A3E2B",
+    "regime_hicp_3pct": COLORS["violet"],
+    "regime_hicp_1pct": "#4C6A8A",
 }
 
 
@@ -323,7 +327,7 @@ def plot_inflation_stress_rates(stress_report, output_dir):
         figure,
         "Inflation stress-rate paths",
         "Deterministic shocks applied after optimisation; the selected portfolio remains frozen.",
-        "Rates retain the baseline seasonality and converge back after the configured shock profile.",
+        "Transitory and persistent profiles preserve baseline seasonality; regime shifts use a new long-run anchor.",
         BASELINE_SOURCE_NOTE,
     )
     return _save(figure, output_dir, "05_inflation_stress_rates.png")

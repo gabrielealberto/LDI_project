@@ -10,6 +10,7 @@ from core.inflation_stress import (
     build_stressed_baseline,
     load_inflation_stresses,
 )
+from core.inflation_baseline import build_baseline
 from core.inflation_stress_testing import _monthly_after_tax_cashflows, replay_frozen_cashflows
 
 
@@ -108,6 +109,59 @@ class InflationStressTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "unique"):
                 load_inflation_stresses(path)
+
+    def test_forecast_relative_start_date_preserves_early_baseline_months(self):
+        scenario = InflationShock(
+            "relative",
+            family="transitory",
+            start_rule="forecast_start",
+            start_offset_months=3,
+            common_annual_shock_bp=200,
+            rationale="Test relative start.",
+            calibration_basis="Test calibration.",
+        )
+        stressed = build_stressed_baseline(self.baseline, self.history, scenario)
+
+        self.assertEqual(
+            stressed["resolved_start_date"].iloc[0], pd.Timestamp("2026-04-01")
+        )
+        np.testing.assert_array_equal(
+            stressed.iloc[:3][["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
+            self.baseline.iloc[:3][["foi_xt_it", "hicp_xt_ea"]].to_numpy(),
+        )
+        self.assertGreater(stressed["hicp_xt_ea"].iloc[-1], self.baseline["hicp_xt_ea"].iloc[-1])
+
+    def test_regime_shift_reanchors_the_long_run_baseline(self):
+        dates = pd.date_range("2016-01-01", periods=120, freq="MS")
+        levels = 100 * np.exp(np.arange(len(dates)) * 0.02 / 12)
+        history = pd.DataFrame(
+            {"date": dates, "foi_xt_it": levels, "hicp_xt_ea": levels}
+        )
+        baseline = build_baseline(history, pd.Timestamp("2050-01-01"))
+        scenario = InflationShock(
+            "regime",
+            family="regime_shift",
+            severity="strategic",
+            start_rule="forecast_start",
+            long_run_hicp_target=0.03,
+            long_run_foi_hicp_spread_bp=25,
+            convergence_half_life_months=24,
+            rationale="Test strategic regime.",
+            calibration_basis="Test calibration.",
+        )
+        reanchored = build_stressed_baseline(baseline, history, scenario)
+
+        self.assertEqual(reanchored["scenario_family"].iloc[0], "regime_shift")
+        self.assertAlmostEqual(reanchored["hicp_yoy"].iloc[-1], 0.03, places=3)
+        self.assertGreater(reanchored["foi_yoy"].iloc[-1], reanchored["hicp_yoy"].iloc[-1])
+
+    def test_versioned_scenario_library_contains_all_three_families(self):
+        scenarios = load_inflation_stresses()
+        self.assertEqual(
+            {scenario.family for scenario in scenarios},
+            {"transitory", "persistent", "regime_shift"},
+        )
+        self.assertTrue(all(scenario.rationale and scenario.calibration_basis for scenario in scenarios))
 
     def test_replay_reports_the_exact_external_cash_needed(self):
         monthly = replay_frozen_cashflows(

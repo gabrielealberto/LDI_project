@@ -8,8 +8,10 @@
   contractual overrides for non-standard nominal bonds. Their root-level
   helpers are importable maintenance functions, not executable applications.
 - `inflation_stress_scenarios.json`: deterministic, versioned FOI/HICP stress
-  definitions for frozen-portfolio post-optimisation analysis. They are not
-  inputs to the baseline optimisation.
+  definitions for frozen-portfolio post-optimisation analysis. It contains
+  governed `transitory`, `persistent`, and `regime_shift` families, including
+  rationale, calibration basis, review cadence, and version. They are not
+  inputs to the baseline optimisation and do not contain probabilities.
 
 `foi_xt_it.parquet` and `hicp_xt_ea.parquet` are the rebased official monthly
 histories used to construct the dynamic inflation baseline. They are refreshed

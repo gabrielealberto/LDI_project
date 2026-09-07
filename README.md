@@ -18,7 +18,7 @@ It is not investment, tax, or legal advice.
 - Includes the broker purchase commission in selection, cost, ROI, and XIRR.
 - Carries earlier bond cash flows into later monthly liabilities.
 - Reports any external funding need explicitly as `uncovered_eur`.
-- Exports an Excel audit trail, a three-chart analytical dashboard, and a
+- Exports an Excel audit trail, a complete analytical dashboard, and a
   square presentation graphic designed for LinkedIn.
 - Defines liabilities in JSON, without editing Python source.
 - Uses one dynamic, coherent FOI/HICP baseline for inflation-linked assets and
@@ -169,17 +169,32 @@ portfolio; they never change the portfolio lots or silently select a different
 path for the main workflow.
 
 Stress definitions are versioned in
-`data/config/inflation_stress_scenarios.json`. Each one specifies a common
-annualised FOI/HICP shock, an optional FOI-versus-HICP spread shock, a start
-month, a linear ramp, a hold period, and an exponential decay half-life. Shocks
-are applied to monthly log changes rather than directly to index levels. This
-preserves continuity, positivity, and the baseline seasonal pattern.
+`data/config/inflation_stress_scenarios.json` and have no probabilities. The
+library deliberately contains three families:
+
+- `transitory`: a short liquidity and timing stress with a linear ramp, brief
+  hold, and explicit decay;
+- `persistent`: the same mathematically coherent overlay with a multi-year
+  hold and slow decay, used for structural cash-flow risk;
+- `regime_shift`: a separate strategic path built from the official history
+  with a new long-run HICP and optional FOI/HICP spread anchor. It is not an
+  endlessly compounding temporary shock.
+
+Every scenario records severity, a forecast-relative start rule, rationale,
+calibration basis, review frequency, and model version. Transitory and
+persistent shocks are applied to monthly log changes rather than directly to
+index levels, preserving continuity, positivity, and baseline seasonality.
+Regime shifts retain the same history and seasonal method but re-anchor the
+long-run inflation assumption. The configured magnitudes are rounded
+management stresses informed by official FOI/HICP history; they are explicitly
+not probability forecasts.
 
 The main workflow writes `data/processed/inflation_stress_summary.parquet` and
 `data/processed/inflation_stress_monthly.parquet`. The summary includes total
-liabilities and asset cash flows, external funding, minimum pre-funding cash,
-deficit months, final cash, portfolio position count, and a fingerprint of the
-baseline used. The monthly file is the audit trail for every scenario.
+liabilities and asset cash flows, external funding, funding in the first 36
+months after the resolved shock start, minimum pre-funding cash, first and total
+deficit months, deltas versus baseline, governance metadata, and a fingerprint
+of the baseline used. The monthly file is the audit trail for every scenario.
 
 The module is intentionally limited to inflation cash-flow risk. Yield-curve,
 market-price, credit, and liquidity shocks require a separate repricing model
@@ -217,7 +232,7 @@ pipeline and should not be edited manually.
 | --- | ---: |
 | Bond lot size | EUR 1,000 |
 | Maximum nominal per ISIN | EUR 20,000 |
-| Minimum daily nominal volume | EUR 20,000 |
+| Minimum daily nominal volume | EUR 1,000 |
 | Broker commission | 0.19%, min EUR 2.95, max EUR 19 per order |
 | Coupon tax rate | 12.5% |
 | Maximum issuer weight | 40% |

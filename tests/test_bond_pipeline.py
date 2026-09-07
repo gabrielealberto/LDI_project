@@ -73,6 +73,19 @@ class BondCleanerTests(unittest.TestCase):
 
         self.assertEqual(cleaned["isincode"].tolist(), ["LIQUID"])
 
+    def test_default_liquidity_threshold_accepts_one_executable_lot(self):
+        bonds = pd.DataFrame(
+            {
+                "isincode": ["ONE_LOT", "BELOW_ONE_LOT", "ZERO"],
+                "pricetype": ["LP", "LP", "LP"],
+                "volume": [1_000, 999, 0],
+            }
+        )
+
+        cleaned = liquid_bonds(bonds)
+
+        self.assertEqual(cleaned["isincode"].tolist(), ["ONE_LOT"])
+
     def test_rejects_a_negative_liquidity_threshold(self):
         bonds = pd.DataFrame({"pricetype": ["LP"], "volume": [20_000]})
 

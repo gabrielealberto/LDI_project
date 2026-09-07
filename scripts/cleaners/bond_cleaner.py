@@ -13,7 +13,10 @@ BI_INPUT = RAW_DIR / "bonds_bi.parquet"
 FD_OUTPUT = PROCESSED_DIR / "fd_clean.parquet"
 BI_OUTPUT = PROCESSED_DIR / "bi_clean.parquet"
 LIQUID_PRICE_TYPES = frozenset({"LP"})
-MIN_DAILY_BOND_VOLUME = 20_000
+# One EUR 1,000 lot is the smallest executable bond position in this mandate.
+# Requiring it excludes zero or negligible prints without treating one quiet
+# trading session as evidence that an otherwise tradable bond is ineligible.
+MIN_DAILY_BOND_VOLUME = 1_000
 
 
 def liquid_bonds(
