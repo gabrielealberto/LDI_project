@@ -209,11 +209,17 @@ def load_cashflow_overrides(paths=(STEP_UP_DOWN_CASHFLOWS_PATH, STANDARD_CASHFLO
 def apply_cashflow_overrides(cashflows, overrides, bonds):
     """Replace generated future flows for each override ISIN, without touching other bonds."""
     replacement_isins = set(overrides["isincode"])
-    retained = cashflows.loc[~cashflows["isincode"].isin(replacement_isins)]
     reference_dates = bonds[["isincode", "referencedate"]].drop_duplicates("isincode").copy()
     reference_dates["referencedate"] = pd.to_datetime(
         reference_dates["referencedate"], dayfirst=True
     )
+    cashflows_with_reference = cashflows.merge(
+        reference_dates, on="isincode", how="left", validate="many_to_one"
+    )
+    retained = cashflows_with_reference.loc[
+        ~cashflows_with_reference["isincode"].isin(replacement_isins)
+        | (cashflows_with_reference["date"] <= cashflows_with_reference["referencedate"])
+    ].drop(columns="referencedate")
     effective_overrides = overrides.merge(
         reference_dates, on="isincode", how="left", validate="many_to_one"
     )
