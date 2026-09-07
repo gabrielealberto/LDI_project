@@ -1,4 +1,3 @@
-import time
 from io import BytesIO
 from pathlib import Path
 
@@ -86,13 +85,3 @@ class ECBDownloader:
         df = self.transform(self.fetch())
         self.save(df)
         return df
-
-
-if __name__ == "__main__":
-    start = time.perf_counter()
-    loader = ECBDownloader()
-    curve_params = loader.run()
-    elapsed = time.perf_counter() - start
-
-    print(curve_params.tail())
-    print(f"\nSaved {len(curve_params)} rows to {loader.output} ({elapsed:.2f}s).")

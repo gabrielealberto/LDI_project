@@ -240,7 +240,7 @@ def monthly_cashflow_matrix(cashflows):
     )
 
 
-def build_cashflow_outputs(scenario=None):
+def build_cashflow_outputs():
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
     all_bonds = merge_clean_bonds(fd_clean, bi_clean)
@@ -276,9 +276,7 @@ def build_cashflow_outputs(scenario=None):
     )
     cashflows = create_all_cashflows(nominal_bonds)
     cashflows = apply_cashflow_overrides(cashflows, overrides, nominal_bonds)
-    inflation_cashflows = build_inflation_linked_cashflows(
-        inflation_linked_bonds, **({} if scenario is None else {"scenario": scenario})
-    )
+    inflation_cashflows = build_inflation_linked_cashflows(inflation_linked_bonds)
     cashflows = pd.concat([cashflows, inflation_cashflows], ignore_index=True)
     bonds = pd.concat([nominal_bonds, inflation_linked_bonds], ignore_index=True)
     matrix = monthly_cashflow_matrix(cashflows)
@@ -291,14 +289,3 @@ def build_cashflow_outputs(scenario=None):
         "matrix": matrix,
         "inflation_linked_bonds": sorted(inflation_linked_isins),
     }
-
-
-if __name__ == "__main__":
-    result = build_cashflow_outputs()
-
-    print(f"Validated bonds: {len(result['bonds'])}")
-    print(f"Included inflation-linked bonds: {len(result['inflation_linked_bonds'])}")
-    print(f"cashflows: {result['cashflows'].shape}")
-    print(f"matrix: {result['matrix'].shape}")
-    print(f"Saved: {BOND_CASHFLOWS_PATH}")
-    print(f"Saved: {BOND_CASHFLOW_MATRIX_PATH}")

@@ -21,7 +21,7 @@ It is not investment, tax, or legal advice.
 - Exports an Excel audit trail, a three-chart analytical dashboard, and a
   square presentation graphic designed for LinkedIn.
 - Defines liabilities in JSON, without editing Python source.
-- Uses one selected coherent FOI/HICP scenario for inflation-linked assets and
+- Uses one dynamic, coherent FOI/HICP baseline for inflation-linked assets and
   Italian inflation-indexed liabilities.
 
 ## Repository structure
@@ -38,18 +38,22 @@ It is not investment, tax, or legal advice.
 | `core/pipeline.py` | Refreshes all market inputs for the official workflow. |
 | `core/bond_cash_flow_creator.py` | Cash-flow generation and yield validation. |
 | `core/future_liabilities.py` | Liability configuration and aggregation. |
-| `core/inflation_scenarios.py` | Builds coherent FOI/HICP scenario paths. |
-| `core/inflation_linked_cashflows.py` | Contractual FOI/HICP scenario cash flows for BTP€i, BTP Italia, and BTP Italia Sì. |
+| `core/inflation_baseline.py` | Builds the dynamic, coherent FOI/HICP baseline. |
+| `core/inflation_linked_cashflows.py` | Contractual FOI/HICP baseline cash flows for BTP€i, BTP Italia, and BTP Italia Sì. |
 | `core/plots.py` | PNG dashboard generation for the monthly LDI result. |
 | `core/utils.py` | Shared project paths, mandate defaults, and numerical helpers. |
 | `tests/` | Fast, deterministic regression tests. |
 
-## Requirements
+## Requirements and installation
 
 - Python 3.11 (the version exercised by CI and the pinned dependencies).
-- Internet access: the canonical workflow refreshes all market data on every run.
+- Internet access for the canonical refresh: the workflow reads official ISTAT,
+  Eurostat, ECB, and market-data endpoints.
+- The commands below assume the repository root as the current directory.
 
-Install the pinned runtime dependencies:
+The pinned runtime dependencies in [requirements.txt](requirements.txt) cover
+the optimizer, Parquet I/O, HTTP downloaders, plots, Excel export, and official
+FOI workbook parsing. Create an isolated environment and install them with:
 
 ```powershell
 python -m venv .venv
@@ -58,33 +62,47 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-For linting and development checks:
+Install the additional development dependency (`ruff`) with:
 
 ```powershell
 python -m pip install -r requirements-dev.txt
 ```
 
+`requirements-dev.txt` includes the runtime file with `-r requirements.txt`;
+installing it is sufficient for CI and local development.
+
 ## Quick start
 
-Run the official workflow from the repository root:
+Open the repository in Visual Studio, select [main.py](main.py) as the startup
+file, then use **Run** (or `F5`). `main.py` is the sole application entry
+point: internal modules have no standalone CLI execution path.
 
-```powershell
-python main.py
-```
+`main.py` refreshes every prerequisite on each run in this order:
 
-`main.py` refreshes every prerequisite on each run, in order: bond download,
-ECB yield-curve download, bond cleaning, and cash-flow generation. It does not
-silently reuse an existing market-data cache. The result is written to
-`data/processed/ldi_optimization.xlsx`.
+1. Download bond-market data.
+2. Download the ECB Svensson yield-curve parameters.
+3. Clean the investable bond universe.
+4. Reuse a valid FOI/HICP history only when it is monthly, gap-free, positive,
+   and no more than two months old; otherwise download it again.
+5. Build the single FOI/HICP inflation baseline.
+6. Generate and validate nominal and inflation-linked bond cash flows.
+7. Solve the integer cash-flow-matching problem and export the workbook.
+8. Replay the frozen portfolio under each configured inflation shock, save the
+   audit files, and generate the dashboard.
 
-Generate the dashboard after a successful optimization:
+The Excel result is written to `data/processed/ldi_optimization.xlsx`.
+Generated Parquet inputs and reports are local artifacts and are ignored by Git.
 
-```powershell
-python -m core.plots
-```
+The run also creates `data/processed/plots/00_inflation_baseline.png`, a
+two-panel chart of the sole FOI/HICP baseline, and
+`data/processed/plots/04_linkedin_summary.png`, a high-resolution 1:1 project
+summary suitable for a LinkedIn post.
 
-The command also creates `data/processed/plots/04_linkedin_summary.png`, a
-high-resolution 1:1 project summary suitable for a LinkedIn post.
+The complete dashboard also contains cash-account, coverage, and allocation
+charts when the portfolio is non-empty. It additionally creates
+`05_inflation_stress_rates.png` and `06_inflation_stress_funding.png`, showing
+the FOI/HICP rate paths and frozen-portfolio funding/liquidity effects. All
+charts are written under `data/processed/plots/`.
 
 ## Workflow
 
@@ -102,7 +120,9 @@ Liability JSON --> Schedule --+--> Monthly LDI engine --> Excel audit trail
 ECB curve ------------------------> PV and duration utilities
 ```
 
-The PNG dashboard is a separate, reproducible step run with `python -m core.plots`.
+The FOI/HICP histories feed the baseline, which is shared by indexed liabilities
+and inflation-linked bond cash flows. The PNG dashboard and stress analysis
+are generated by the same Visual Studio run of `main.py`.
 
 ## Configure liabilities
 
@@ -113,17 +133,57 @@ requires `name`, `category`, `start_date`, `end_date`, `initial_cashflow`,
 `frequency` supports `annual` and `every_n_years`; the latter requires
 `interval_years`.
 
-## Inflation scenario
+Optional `indexation` fields support `index_id`, `base_reference_date`, and
+`observation_lag_months`. Configured FOI liabilities use the same baseline
+provider as FOI-indexed assets, so both sides of the optimization remain
+coherent.
 
-`ACTIVE_INFLATION_SCENARIO` in [core/utils.py](core/utils.py) selects the default path:
-`low_inflation`, `baseline`, `high_inflation`, or `severe_inflation`. The same
-selection drives HICP-indexed BTP€i, FOI-indexed BTP Italia instruments, and
+## Inflation baseline
+
+The workflow uses one dynamic FOI/HICP baseline; no inflation scenario can be
+selected for optimisation. It starts from the latest official index levels,
+combines robust recent inflation observations with monthly seasonality, and
+converges gradually towards the ECB's 2% medium-term target. FOI is linked to
+HICP through a temporary, mean-reverting Italy/euro-area inflation spread; both
+indices converge to the common long-term target. The same
+baseline drives HICP-indexed BTP€i, FOI-indexed BTP Italia instruments, and
 liabilities carrying an `indexation` block. Prices and valuation dates always
 remain those in the cleaned bond-market parquet.
 
-The refresh pipeline downloads FOI/HICP, rebuilds the coherent scenarios through
-the later of the liability horizon and the longest inflation-linked maturity, and
-then creates native `isincode/date/l1/l2/l3` flows for the optimizer.
+The refresh pipeline downloads FOI/HICP from their official dynamic endpoints,
+rebuilds the baseline through the later of the liability horizon and the longest
+inflation-linked maturity, and then creates native `isincode/date/l1/l2/l3`
+flows for the optimizer.
+
+The generated baseline is stored at
+`data/processed/inflation_baseline.parquet`. It contains monthly `date`,
+`foi_xt_it`, `hicp_xt_ea`, derived `foi_yoy` and `hicp_yoy`, the FOI/HICP log
+spread, and a model version. Historical observations remain in
+`data/foi_xt_it.parquet` and `data/hicp_xt_ea.parquet`.
+
+## Inflation stress testing
+
+The baseline remains the only path used for the optimisation. Deterministic
+inflation stresses are a separate, post-optimisation replay of the frozen
+portfolio; they never change the portfolio lots or silently select a different
+path for the main workflow.
+
+Stress definitions are versioned in
+`data/config/inflation_stress_scenarios.json`. Each one specifies a common
+annualised FOI/HICP shock, an optional FOI-versus-HICP spread shock, a start
+month, a linear ramp, a hold period, and an exponential decay half-life. Shocks
+are applied to monthly log changes rather than directly to index levels. This
+preserves continuity, positivity, and the baseline seasonal pattern.
+
+The main workflow writes `data/processed/inflation_stress_summary.parquet` and
+`data/processed/inflation_stress_monthly.parquet`. The summary includes total
+liabilities and asset cash flows, external funding, minimum pre-funding cash,
+deficit months, final cash, portfolio position count, and a fingerprint of the
+baseline used. The monthly file is the audit trail for every scenario.
+
+The module is intentionally limited to inflation cash-flow risk. Yield-curve,
+market-price, credit, and liquidity shocks require a separate repricing model
+and are not mixed into this analysis.
 
 ## Use the optimizer in Python
 
@@ -146,6 +206,11 @@ The engine purchases non-negative integer EUR 1,000 lots. Bond cash flows
 received before a liability can cover later monthly liabilities. Any remaining
 funding requirement is shown in `uncovered_eur`; it is never hidden.
 
+The optimizer consumes the validated monthly matrix at
+`data/processed/bond_cashflow_matrix.parquet` and the detailed flows at
+`data/processed/bond_cashflows.parquet`. These files are rebuilt by the
+pipeline and should not be edited manually.
+
 ## Main controls
 
 | Control | Default |
@@ -166,26 +231,21 @@ commissions are therefore charged immediately. A redemption is not treated as
 a sale; `sale_commission_eur` remains zero unless an explicit sale workflow is
 introduced.
 
-## Manual data refresh
+## Execution model
 
-```powershell
-python scripts/downloaders/bond_downloader.py
-python scripts/downloaders/yield_curve_downloader.py
-python scripts/downloaders/download_foi_xt_it.py
-python scripts/downloaders/download_hicp_xt_ea.py
-python scripts/cleaners/bond_cleaner.py
-python -m core.inflation_scenarios
-python -m core.bond_cash_flow_creator
-```
-
-The full `main.py` refresh also updates the ECB curve used by the present-value
-utilities in `core/future_liabilities.py`.
+There are no stage-by-stage CLI commands. Use Visual Studio Run on `main.py`;
+it refreshes the full dependency chain, including the ECB curve used by the
+present-value utilities in `core/future_liabilities.py`. The root-level
+contractual-cash-flow helpers expose importable maintenance functions only; the
+validated JSON overrides under `data/config/` are sufficient for normal runs.
 
 ## Reproducible data policy
 
-A fresh clone does not need any ignored data file. `python main.py` downloads
-the bond and ECB inputs, rebuilds every Parquet dataset, solves the portfolio,
-and recreates the Excel report. `python -m core.plots` then recreates the PNG charts.
+A fresh clone does not need any generated data file. Running `main.py` from
+Visual Studio downloads
+the bond and ECB inputs, obtains or refreshes the official index histories,
+rebuilds the baseline and every derived Parquet dataset, solves the portfolio,
+and recreates the Excel report, stress audit trail, and PNG charts.
 
 The versioned inputs required to reproduce the project are the Python source,
 dependency files, `data/config/`, and the two official rebased index histories
@@ -200,8 +260,13 @@ ruff format . --check
 ruff check .
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+The tests are deterministic and use synthetic inputs or local fixtures; the
+canonical end-to-end workflow additionally requires network access and current
+official data. There is no separate contribution guide or changelog in this
+repository; the source files and test suite are the authoritative references.
 
-## License
+## Repository status
 
-Released under the [MIT License](LICENSE).
+This repository is a research and prototyping workflow. No separate license
+file is currently included; use and redistribution should therefore follow the
+terms established by the project owner.

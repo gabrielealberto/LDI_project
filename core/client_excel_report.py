@@ -16,9 +16,6 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-from .utils import ACTIVE_INFLATION_SCENARIO
-
-
 COLORS = {
     "navy": "182B3A",
     "teal": "167C80",
@@ -187,7 +184,7 @@ def _dashboard(workbook, result, annual, issuer, as_of):
     _title(
         ws,
         "LDI Portfolio",
-        f"Prepared {as_of:%d %b %Y}  •  Inflation scenario: {ACTIVE_INFLATION_SCENARIO}",
+        f"Prepared {as_of:%d %b %Y}  •  Dynamic inflation baseline",
         15,
     )
     _section(ws, 4, "Mandate outcome", 1, 10)
@@ -218,7 +215,7 @@ def _dashboard(workbook, result, annual, issuer, as_of):
     statements = [
         ("Portfolio purpose", "Cash-flow matching portfolio designed to meet the configured future liability schedule."),
         ("Funding status", "No external funding is required in the solved base case; monthly coverage is managed through the cumulative cash account."),
-        ("Scenario basis", f"Asset and liability inflation-linked cash flows use the selected coherent FOI/HICP scenario: {ACTIVE_INFLATION_SCENARIO}."),
+        ("Inflation basis", "Asset and liability inflation-linked cash flows use the sole dynamic FOI/HICP baseline."),
         ("Liquidity reserve", f"Terminal projected cash is {terminal_ratio:.1%} of initial investment, against the configured terminal reserve policy."),
     ]
     for row, (label, text) in enumerate(statements, start=end + 4):
@@ -321,7 +318,7 @@ def _methodology_sheet(workbook, result, as_of):
     _section(ws, 4, "Mandate controls", 1, 5)
     controls = [
         ("Report generation date", as_of.strftime("%d %b %Y")),
-        ("Inflation scenario", ACTIVE_INFLATION_SCENARIO),
+        ("Inflation baseline", "Dynamic FOI/HICP baseline"),
         ("Lot size", "EUR 1,000"),
         ("Maximum nominal per ISIN", f"EUR {result['max_nominal_per_bond']:,.0f}"),
         ("Maximum issuer concentration", f"{result['max_issuer_weight']:.0%}"),
@@ -336,7 +333,7 @@ def _methodology_sheet(workbook, result, as_of):
     notes = [
         "This report shows a buy-and-hold, integer-lot cash-flow matching portfolio.",
         "The cash account is cumulative: coupons and redemptions received before a liability may finance later payments.",
-        "Inflation-linked asset cash flows and Italian indexed liabilities use the selected coherent FOI/HICP scenario.",
+        "Inflation-linked asset cash flows and Italian indexed liabilities use the sole dynamic FOI/HICP baseline.",
         "Market prices are taken from the cleaned market-data parquet; reported figures are estimates and should be reconfirmed before execution.",
         "This document is an analytical portfolio report and does not constitute investment, legal or tax advice.",
     ]
@@ -351,75 +348,7 @@ def _methodology_sheet(workbook, result, as_of):
     return ws
 
 
-def _scenario_sheet(workbook, scenario_analysis):
-    """Add an ex-post comparison for the frozen portfolio composition."""
-    ws = workbook.create_sheet("Scenario Analysis")
-    ws.sheet_properties.tabColor = COLORS["gold"]
-    _style_sheet(ws, "A5")
-    base = scenario_analysis["base_scenario"]
-    _title(ws, "Inflation scenario analysis", f"Frozen portfolio composition; base optimisation scenario: {base}.", 9)
-    _section(ws, 4, "Scenario comparison", 1, 9)
-    rows = []
-    for name, data in scenario_analysis["scenarios"].items():
-        rows.append([
-            name,
-            data.get("probability", float("nan")),
-            data.get("selection_percentile", float("nan")),
-            data["total_liabilities_eur"],
-            data["total_asset_cashflows_eur"],
-            data["external_funding_eur"],
-            data["minimum_cash_balance_eur"],
-            data["final_cash_balance_eur"],
-            data["deficit_months"],
-        ])
-    end = _table(
-        ws, 5,
-        ["Scenario", "Probability", "Selected percentile", "Liabilities", "Asset cash flows", "External funding", "Minimum pre-funding cash", "Final cash", "Deficit months"],
-        rows,
-        "InflationScenarioSummary",
-        [20, 14, 18, 18, 18, 18, 18, 18, 15],
-        {2: PERCENT, 3: PERCENT, 4: EUR0, 5: EUR0, 6: EUR0, 7: EUR0, 8: EUR0, 9: "0"},
-    )
-    ws.cell(end + 2, 1, "Probability convention").font = Font(name="Aptos", size=10, bold=True, color=COLORS["teal"])
-    ws.merge_cells(start_row=end + 2, start_column=2, end_row=end + 2, end_column=9)
-    note = ws.cell(end + 2, 2, "Probability is the simulated distribution band represented by each selected path; the selected percentile is the path used as the scenario representative.")
-    note.font = Font(name="Aptos", size=9, italic=True, color=COLORS["muted"])
-    note.alignment = Alignment(wrap_text=True)
-    # Chart-ready helper data is placed below the summary and kept visible for auditability.
-    names = list(scenario_analysis["scenarios"])
-    months = sorted({str(row.month) for data in scenario_analysis["scenarios"].values() for row in data["cashflow_match"].itertuples()})
-    helper_start = end + 5
-    headers = ["Month", *names]
-    ws.cell(helper_start, 1, headers[0])
-    for col, name in enumerate(names, start=2):
-        ws.cell(helper_start, col, name)
-    for i, month in enumerate(months, start=helper_start + 1):
-        ws.cell(i, 1, month)
-        for col, name in enumerate(names, start=2):
-            frame = scenario_analysis["scenarios"][name]["cashflow_match"]
-            values = frame.loc[frame["month"].astype(str).eq(month), "cash_balance_eur"]
-            ws.cell(i, col, float(values.iloc[0]) if not values.empty else 0.0)
-    chart = LineChart()
-    chart.title = "Cash balance by inflation scenario"
-    chart.style = 2
-    chart.height = 9
-    chart.width = 19
-    chart.y_axis.title = "EUR"
-    chart.x_axis.title = "Month"
-    chart.add_data(Reference(ws, min_col=2, max_col=1 + len(names), min_row=helper_start, max_row=helper_start + len(months)), titles_from_data=True)
-    chart.set_categories(Reference(ws, min_col=1, min_row=helper_start + 1, max_row=helper_start + len(months)))
-    chart.legend.position = "b"
-    chart.x_axis.tickLblSkip = 12
-    chart.x_axis.tickMarkSkip = 12
-    for series in chart.series:
-        series.marker.symbol = "none"
-        series.smooth = False
-        series.graphicalProperties.line.width = 12700
-    ws.add_chart(chart, "K5")
-    return ws
-
-
-def export_client_excel_report(result, output_path, scenario_analysis=None):
+def export_client_excel_report(result, output_path):
     """Create the polished client workbook from an immutable solved result."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -435,8 +364,6 @@ def export_client_excel_report(result, output_path, scenario_analysis=None):
     _cashflow_sheet(workbook, result)
     _annual_sheet(workbook, annual)
     _methodology_sheet(workbook, result, as_of)
-    if scenario_analysis:
-        _scenario_sheet(workbook, scenario_analysis)
     workbook.calculation.fullCalcOnLoad = True
     workbook.calculation.forceFullCalc = True
     workbook.save(output_path)

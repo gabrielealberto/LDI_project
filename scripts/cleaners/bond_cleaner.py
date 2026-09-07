@@ -122,23 +122,3 @@ def run():
         "fd_output": FD_OUTPUT,
         "bi_output": BI_OUTPUT,
     }
-
-
-if __name__ == "__main__":
-    result = run()
-    report = result["fd"]
-
-    print(f"bonds_bi.parquet loaded: {result['bi_rows']} rows")
-    print("bonds_fd.parquet:")
-    print(f"  initial:           {report['initial']}")
-    print(f"  EUR only:          {report['eur']}")
-    print(f"  GOV/SOV only:      {report['government']}")
-    print(f"  excluding SOV_BEI: {report['no_bei']}")
-    print(f"  rating filter:     {report['rating']}")
-    print(f"  with a rating:     {report['rated']}")
-    print(f"  minimumlot <=1000: {report['minimumlot']}")
-    print(f"  liquid market data: {report['liquid']}")
-    print(f"  maturity >= 1y:    {report['maturity_1y']}")
-    print(f"\nSaved: {result['fd_output']}")
-    print(f"Filtered bonds_bi.parquet: {result['bi_clean_rows']} rows")
-    print(f"Saved: {result['bi_output']}")

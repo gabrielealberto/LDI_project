@@ -1,0 +1,52 @@
+[
+  {
+    "scenario_id": "inflation_upside_200bp",
+    "start_date": "2027-01-01",
+    "common_annual_shock_bp": 200,
+    "foi_hicp_spread_shock_bp": 0,
+    "ramp_months": 6,
+    "hold_months": 12,
+    "decay_half_life_months": 24,
+    "model_version": "inflation_stress_v1"
+  },
+  {
+    "scenario_id": "inflation_downside_200bp",
+    "start_date": "2027-01-01",
+    "common_annual_shock_bp": -200,
+    "foi_hicp_spread_shock_bp": 0,
+    "ramp_months": 6,
+    "hold_months": 12,
+    "decay_half_life_months": 24,
+    "model_version": "inflation_stress_v1"
+  },
+  {
+    "scenario_id": "italy_spread_widening_100bp",
+    "start_date": "2027-01-01",
+    "common_annual_shock_bp": 0,
+    "foi_hicp_spread_shock_bp": 100,
+    "ramp_months": 6,
+    "hold_months": 12,
+    "decay_half_life_months": 24,
+    "model_version": "inflation_stress_v1"
+  },
+  {
+    "scenario_id": "italy_stagflation",
+    "start_date": "2027-01-01",
+    "common_annual_shock_bp": 150,
+    "foi_hicp_spread_shock_bp": 100,
+    "ramp_months": 6,
+    "hold_months": 12,
+    "decay_half_life_months": 24,
+    "model_version": "inflation_stress_v1"
+  },
+  {
+    "scenario_id": "deflation_stress",
+    "start_date": "2027-01-01",
+    "common_annual_shock_bp": -250,
+    "foi_hicp_spread_shock_bp": -50,
+    "ramp_months": 6,
+    "hold_months": 12,
+    "decay_half_life_months": 24,
+    "model_version": "inflation_stress_v1"
+  }
+]

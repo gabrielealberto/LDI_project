@@ -58,7 +58,7 @@ class Cf_engine:
             if self.liability.indexation:
                 if index_provider is None:
                     raise ValueError(
-                        "An index provider is required for scenario-indexed liabilities."
+                        "An index provider is required for inflation-indexed liabilities."
                     )
                 terms = self.liability.indexation
                 anchor = pd.Timestamp(terms.get("base_reference_date", self.liability.start_date))
@@ -93,9 +93,9 @@ class LiabilityPortfolio:
 
     def merge_liabilities(self, index_provider=None):
         if index_provider is None and any(e.liability.indexation for e in self.liabilities):
-            from .inflation_linked_cashflows import load_selected_index_provider
+            from .inflation_linked_cashflows import load_baseline_index_provider
 
-            index_provider = load_selected_index_provider()
+            index_provider = load_baseline_index_provider()
         cf_pairs = [e.to_cf(index_provider=index_provider) for e in self.liabilities]
         common_dates = pd.date_range(
             start=min(e.liability.start_date for e in self.liabilities),
@@ -130,22 +130,16 @@ portfolio = LiabilityPortfolio(
 )
 
 
-def scenario_cashflows(scenario=None):
-    """Return FOI-indexed liabilities under the active or explicitly selected scenario."""
-    from .inflation_linked_cashflows import load_selected_index_provider
-
-    provider = load_selected_index_provider(**({} if scenario is None else {"scenario": scenario}))
+def cashflows_for_provider(index_provider):
+    """Return all configured liabilities using one explicit index provider."""
     dynamic_portfolio = LiabilityPortfolio(
         [Cf_engine(liability) for liability in load_liabilities()], dt.datetime.today()
     )
-    return dynamic_portfolio.merge_liabilities(index_provider=provider)
+    return dynamic_portfolio.merge_liabilities(index_provider=index_provider)
 
 
-if __name__ == "__main__":
-    dcf, pv, t, dates = portfolio.pv()
-    duration = np.sum(t * dcf) / pv
-    print(f"PV:                {pv:>14,.2f}")
-    print(f"Duration:          {duration:>14.3f}")
-    for date, dcf_i in zip(dates, dcf):
-        if dcf_i != 0:
-            print(f"  {date.date()}   dcf: {dcf_i:>10,.2f}")
+def baseline_cashflows():
+    """Return FOI-indexed liabilities under the sole forecast baseline."""
+    from .inflation_linked_cashflows import load_baseline_index_provider
+
+    return cashflows_for_provider(load_baseline_index_provider())

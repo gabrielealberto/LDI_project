@@ -222,7 +222,7 @@ def save_parquet(series: pd.DataFrame, output_path: Path) -> None:
     output.to_parquet(output_path, index=False, engine="pyarrow")
 
 
-def main() -> None:
+def download_hicp_series() -> None:
     """Download, validate, merge, save, and verify the requested series."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     historical = validate_series(
@@ -243,22 +243,4 @@ def main() -> None:
     save_parquet(merged, OUTPUT_PATH)
 
     check = pd.read_parquet(OUTPUT_PATH)
-    print("HICP XT EA saved successfully")
-    print(f"Start: {check['date'].min():%Y-%m-%d}")
-    print(f"End: {check['date'].max():%Y-%m-%d}")
-    print(f"Observations: {len(check)}")
-    print(f"Missing months: {len(missing)}")
-    print(f"Rebasing factor: {factor:.10f}")
-    print(f"Maximum overlap deviation: {deviation:.10f}")
-    print(f"Latest value: {check['hicp_xt_ea'].iloc[-1]:.2f}")
-    print(f"Output: {OUTPUT_PATH}")
-    print("\ncheck.head()")
-    print(check.head())
-    print("\ncheck.tail()")
-    print(check.tail())
-    print("\ncheck.dtypes")
-    print(check.dtypes)
-
-
-if __name__ == "__main__":
-    main()
+    logging.info("HICP series written: %s observations to %s", len(check), OUTPUT_PATH)

@@ -1,8 +1,8 @@
-"""Scenario-indexed contractual cash flows for Italian inflation-linked BTPs.
+"""Baseline-indexed contractual cash flows for Italian inflation-linked BTPs.
 
 The market parquet remains the source of the quoted clean price and valuation
 date.  This module only turns the contractual terms in the versioned JSON plus
-the selected coherent FOI/HICP path into the native ``l1/l2/l3`` cash-flow
+the coherent FOI/HICP baseline into the native ``l1/l2/l3`` cash-flow
 schema consumed by the LDI optimiser.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .utils import ACTIVE_INFLATION_SCENARIO, INFLATION_SCENARIOS_PATH, PROJECT_ROOT
+from .utils import INFLATION_BASELINE_PATH, PROJECT_ROOT
 
 
 CONFIG_PATH = PROJECT_ROOT / "data" / "config" / "inflation_linked_bonds.json"
@@ -23,12 +23,11 @@ HICP_PATH = PROJECT_ROOT / "data" / "hicp_xt_ea.parquet"
 INDEX_COLUMNS = {"FOI_XT_IT": "foi_xt_it", "HICP_XT_EA": "hicp_xt_ea"}
 
 
-class ScenarioIndexProvider:
-    """Serve realised monthly observations and one selected forecast path."""
+class BaselineIndexProvider:
+    """Serve realised monthly observations and the single forecast baseline."""
 
-    def __init__(self, levels: dict[str, pd.Series], scenario: str):
+    def __init__(self, levels: dict[str, pd.Series]):
         self.levels = levels
-        self.scenario = scenario
 
     def monthly_level(self, index_id: str, date: pd.Timestamp) -> float:
         if index_id not in self.levels:
@@ -38,7 +37,7 @@ class ScenarioIndexProvider:
             value = float(self.levels[index_id].loc[month])
         except KeyError as error:
             raise ValueError(
-                f"{index_id} has no realised/selected-scenario observation for {month:%Y-%m}."
+                f"{index_id} has no realised/baseline observation for {month:%Y-%m}."
             ) from error
         if not np.isfinite(value) or value <= 0:
             raise ValueError(f"Invalid {index_id} level for {month:%Y-%m}.")
@@ -70,27 +69,20 @@ def _read_levels(path: Path, column: str) -> pd.Series:
     return pd.Series(values.to_numpy(dtype=float), index=frame["date"], name=column).sort_index()
 
 
-def load_selected_index_provider(
-    scenario: str = ACTIVE_INFLATION_SCENARIO,
+def build_index_provider(
+    baseline: pd.DataFrame,
     foi_path: Path = FOI_PATH,
     hicp_path: Path = HICP_PATH,
-    scenarios_path: Path = INFLATION_SCENARIOS_PATH,
-) -> ScenarioIndexProvider:
-    """Load history plus exactly one coherent FOI/HICP forecast scenario."""
-    scenarios = pd.read_parquet(scenarios_path)
-    required = {"date", "scenario", *INDEX_COLUMNS.values()}
-    missing = required - set(scenarios.columns)
+) -> BaselineIndexProvider:
+    """Build an index provider from history and a validated forecast path."""
+    required = {"date", *INDEX_COLUMNS.values()}
+    missing = required - set(baseline.columns)
     if missing:
-        raise ValueError(f"Inflation scenarios are missing columns: {sorted(missing)}")
-    selected = scenarios.loc[
-        scenarios["scenario"].eq(scenario), ["date", *INDEX_COLUMNS.values()]
-    ].copy()
-    if selected.empty:
-        available = sorted(scenarios["scenario"].dropna().unique())
-        raise ValueError(f"Unknown inflation scenario {scenario!r}; available: {available}")
-    selected["date"] = pd.to_datetime(selected["date"])
-    if selected["date"].duplicated().any() or not selected["date"].dt.is_month_start.all():
-        raise ValueError(f"Scenario {scenario!r} does not have unique month-start dates.")
+        raise ValueError(f"Inflation baseline is missing columns: {sorted(missing)}")
+    baseline = baseline[["date", *INDEX_COLUMNS.values()]].copy()
+    baseline["date"] = pd.to_datetime(baseline["date"])
+    if baseline.empty or baseline["date"].duplicated().any() or not baseline["date"].dt.is_month_start.all():
+        raise ValueError("Inflation baseline does not have unique month-start dates.")
 
     history = {
         "FOI_XT_IT": _read_levels(foi_path, "foi_xt_it"),
@@ -99,21 +91,32 @@ def load_selected_index_provider(
     levels = {}
     for index_id, column in INDEX_COLUMNS.items():
         forecast = pd.Series(
-            pd.to_numeric(selected[column], errors="coerce").to_numpy(dtype=float),
-            index=selected["date"],
+            pd.to_numeric(baseline[column], errors="coerce").to_numpy(dtype=float),
+            index=baseline["date"],
             name=column,
         ).sort_index()
         if forecast.isna().any() or not (forecast > 0).all():
-            raise ValueError(f"Scenario {scenario!r} has invalid {index_id} levels.")
+            raise ValueError(f"Inflation baseline has invalid {index_id} levels.")
         overlap = history[index_id].index.intersection(forecast.index)
         if len(overlap):
-            raise ValueError(f"History and scenario overlap for {index_id}: {overlap[0]:%Y-%m}.")
+            raise ValueError(f"History and baseline overlap for {index_id}: {overlap[0]:%Y-%m}.")
         combined = pd.concat([history[index_id], forecast]).sort_index()
         expected = pd.date_range(combined.index.min(), combined.index.max(), freq="MS")
         if not combined.index.equals(expected):
-            raise ValueError(f"History/scenario series has a monthly gap for {index_id}.")
+            raise ValueError(f"History/baseline series has a monthly gap for {index_id}.")
         levels[index_id] = combined
-    return ScenarioIndexProvider(levels, scenario)
+    return BaselineIndexProvider(levels)
+
+
+def load_baseline_index_provider(
+    foi_path: Path = FOI_PATH,
+    hicp_path: Path = HICP_PATH,
+    baseline_path: Path = INFLATION_BASELINE_PATH,
+) -> BaselineIndexProvider:
+    """Load history plus the sole coherent FOI/HICP forecast baseline."""
+    return build_index_provider(
+        pd.read_parquet(baseline_path), foi_path=foi_path, hicp_path=hicp_path
+    )
 
 
 def load_inflation_linked_terms(path: Path = CONFIG_PATH) -> dict[str, dict]:
@@ -168,7 +171,7 @@ def _period_base(
 
 
 def _index_ratio(
-    provider: ScenarioIndexProvider, term: dict, date: pd.Timestamp, base: pd.Timestamp
+    provider: BaselineIndexProvider, term: dict, date: pd.Timestamp, base: pd.Timestamp
 ) -> float:
     indexation = term["indexation"]
     lag = int(indexation.get("observation_lag_months", 3))
@@ -178,7 +181,7 @@ def _index_ratio(
 
 
 def _future_cashflows(
-    term: dict, provider: ScenarioIndexProvider, valuation_date: pd.Timestamp
+    term: dict, provider: BaselineIndexProvider, valuation_date: pd.Timestamp
 ) -> pd.DataFrame:
     """Create future contractual payments; l3 is the taxable non-principal amount."""
     nominal = float(term["nominal_per_lot"])
@@ -235,7 +238,7 @@ def _future_cashflows(
 
 
 def _purchase_cashflow(
-    term: dict, market: pd.Series, provider: ScenarioIndexProvider
+    term: dict, market: pd.Series, provider: BaselineIndexProvider
 ) -> pd.DataFrame:
     valuation = pd.to_datetime(market["referencedate"], dayfirst=True).normalize()
     nominal = float(term["nominal_per_lot"])
@@ -288,19 +291,18 @@ def _purchase_cashflow(
 
 def build_inflation_linked_cashflows(
     bonds: pd.DataFrame,
-    scenario: str = ACTIVE_INFLATION_SCENARIO,
-    provider: ScenarioIndexProvider | None = None,
+    provider: BaselineIndexProvider | None = None,
     terms_path: Path = CONFIG_PATH,
     require_all_terms: bool = True,
 ) -> pd.DataFrame:
-    """Return selected-scenario cash flows in the same schema as nominal bonds."""
+    """Return baseline cash flows in the same schema as nominal bonds."""
     terms = load_inflation_linked_terms(terms_path)
     market = bonds.loc[bonds["isincode"].astype(str).isin(terms)].copy()
     missing = sorted(set(terms) - set(market["isincode"].astype(str)))
     if missing and require_all_terms:
         raise ValueError(f"Inflation-linked ISINs absent from clean market universe: {missing}")
     terms = {isin: terms[isin] for isin in market["isincode"].astype(str) if isin in terms}
-    provider = provider or load_selected_index_provider(scenario)
+    provider = provider or load_baseline_index_provider()
     rows = []
     for row in market.itertuples(index=False):
         values = row._asdict()
@@ -315,6 +317,8 @@ def build_inflation_linked_cashflows(
         )
         flows.insert(0, "isincode", isincode)
         rows.append(flows)
+    if not rows:
+        return pd.DataFrame(columns=["isincode", "date", "l1", "l2", "l3"])
     return (
         pd.concat(rows, ignore_index=True).sort_values(["isincode", "date"]).reset_index(drop=True)
     )

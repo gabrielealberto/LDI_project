@@ -16,13 +16,10 @@ FD_CLEAN_PATH = PROCESSED_DIR / "fd_clean.parquet"
 BI_CLEAN_PATH = PROCESSED_DIR / "bi_clean.parquet"
 BONDS_PATH = FD_CLEAN_PATH
 CURVE_PATH = RAW_DIR / "ecb_svensson.parquet"
-INFLATION_SCENARIOS_PATH = PROCESSED_DIR / "inflation_scenarios.parquet"
-
-# The default coherent FOI/HICP path used by the LDI run.  Public entry points
-# also accept an explicit scenario argument so comparative runs do not require
-# mutating this module.
-# Choose one of: "low_inflation", "baseline", "high_inflation", "severe_inflation".
-ACTIVE_INFLATION_SCENARIO = "baseline"
+INFLATION_BASELINE_PATH = PROCESSED_DIR / "inflation_baseline.parquet"
+INFLATION_STRESS_SCENARIOS_PATH = CONFIG_DIR / "inflation_stress_scenarios.json"
+INFLATION_STRESS_SUMMARY_PATH = PROCESSED_DIR / "inflation_stress_summary.parquet"
+INFLATION_STRESS_MONTHLY_PATH = PROCESSED_DIR / "inflation_stress_monthly.parquet"
 
 NOMINAL = 1_000
 MAX_NOMINAL_PER_BOND = 50_000

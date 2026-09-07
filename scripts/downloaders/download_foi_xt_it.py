@@ -186,7 +186,7 @@ def validate_series(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.reset_index(drop=True)
 
 
-def main() -> None:
+def download_foi_series() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     frames = [download_pre_1996()]
     logging.info("ISTAT_Rivaluta_FOI_nt: %s observations (1992=100)", len(frames[0]))
@@ -198,14 +198,4 @@ def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     result.to_parquet(OUTPUT, index=False, engine="pyarrow")
     check = pd.read_parquet(OUTPUT)
-    print("Serie: FOI_XT_IT\nTerritorio: Italia\nIndice: FOI generale senza tabacchi")
-    print("Frequenza: mensile\nBase finale: 2025=100")
-    print(
-        f"Prima osservazione: {check.date.min():%Y-%m}\nUltima osservazione: {check.date.max():%Y-%m}"
-    )
-    print(f"Numero osservazioni: {len(check)}\nOutput: {OUTPUT}")
-    print(check.head(), "\n", check.tail(), "\n", check.dtypes)
-
-
-if __name__ == "__main__":
-    main()
+    logging.info("FOI series written: %s observations to %s", len(check), OUTPUT)

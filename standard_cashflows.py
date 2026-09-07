@@ -127,7 +127,7 @@ def build_and_validate():
     return schedules, validation
 
 
-def main():
+def write_contractual_cashflows():
     schedules, validation = build_and_validate()
     if not all(row["matches"] for row in validation):
         print(json.dumps(validation, indent=2))
@@ -138,7 +138,3 @@ def main():
     print(f"Contractual cash-flow rows: {len(schedules)}")
     print(f"Cash-flow JSON: {OUTPUT_PATH}")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -25,12 +25,3 @@ curves = {
     "AAA": "YC.B.U2.EUR.4F.G_N_A.SV_C_YM",
     "All bonds": "YC.B.U2.EUR.4F.G_N_C.SV_C_YM",
 }
-
-
-if __name__ == "__main__":
-    query_maturities = np.array([5.5, 8, 20.2])
-    params = load_svensson_params(CSV_PATH, curves["All bonds"])
-    rates = svensson_yield(query_maturities, *params)
-
-    for t, y in zip(query_maturities, rates):
-        print(f"{t} years: {y:.4f}%")

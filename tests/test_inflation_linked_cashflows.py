@@ -2,7 +2,11 @@ import unittest
 
 import pandas as pd
 
-from core.inflation_linked_cashflows import ScenarioIndexProvider, _future_cashflows
+from core.inflation_linked_cashflows import (
+    BaselineIndexProvider,
+    _future_cashflows,
+    build_inflation_linked_cashflows,
+)
 
 
 def provider(values):
@@ -10,10 +14,20 @@ def provider(values):
     series = pd.Series(100.0, index=months)
     for month, value in values.items():
         series.loc[pd.Timestamp(month)] = value
-    return ScenarioIndexProvider({"HICP_XT_EA": series, "FOI_XT_IT": series.copy()}, "test")
+    return BaselineIndexProvider({"HICP_XT_EA": series, "FOI_XT_IT": series.copy()})
 
 
 class InflationLinkedCashflowTests(unittest.TestCase):
+    def test_empty_inflation_linked_universe_returns_the_native_empty_schema(self):
+        flows = build_inflation_linked_cashflows(
+            pd.DataFrame(columns=["isincode", "referencedate", "price"]),
+            provider=provider({}),
+            require_all_terms=False,
+        )
+
+        self.assertEqual(list(flows.columns), ["isincode", "date", "l1", "l2", "l3"])
+        self.assertTrue(flows.empty)
+
     def test_daily_reference_index_uses_three_month_lag_and_linear_interpolation(self):
         indexes = provider({"2025-04-01": 100.0, "2025-05-01": 131.0})
 
@@ -78,7 +92,3 @@ class InflationLinkedCashflowTests(unittest.TestCase):
         self.assertAlmostEqual(flows.iloc[0].l3, 111.0)
         self.assertAlmostEqual(flows.iloc[1].l3, 10.0)
         self.assertEqual(flows.iloc[1].l1, 1000.0)
-
-
-if __name__ == "__main__":
-    unittest.main()

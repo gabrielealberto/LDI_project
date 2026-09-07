@@ -5,17 +5,17 @@ import logging
 import pandas as pd
 
 from .bond_cash_flow_creator import build_cashflow_outputs
-from .inflation_scenarios import main as build_inflation_scenarios
+from .inflation_baseline import write_baseline as build_inflation_baseline
 from scripts.cleaners import bond_cleaner
 from scripts.downloaders.bond_downloader import BondDownloader
-from scripts.downloaders.download_foi_xt_it import main as download_foi
-from scripts.downloaders.download_hicp_xt_ea import main as download_hicp
+from scripts.downloaders.download_foi_xt_it import download_foi_series as download_foi
+from scripts.downloaders.download_hicp_xt_ea import download_hicp_series as download_hicp
 from scripts.downloaders.yield_curve_downloader import ECBDownloader
 from .utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
     CURVE_PATH,
-    INFLATION_SCENARIOS_PATH,
+    INFLATION_BASELINE_PATH,
     PROJECT_ROOT,
 )
 
@@ -96,9 +96,9 @@ def refresh_ldi_inputs():
     )
     completed.append("inflation indices")
 
-    build_inflation_scenarios()
-    _require_outputs([INFLATION_SCENARIOS_PATH], "inflation-scenario generation")
-    completed.append("inflation scenarios")
+    build_inflation_baseline()
+    _require_outputs([INFLATION_BASELINE_PATH], "inflation-baseline generation")
+    completed.append("inflation baseline")
 
     build_cashflow_outputs()
     _require_outputs(

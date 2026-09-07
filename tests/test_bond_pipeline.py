@@ -82,7 +82,3 @@ class BondCleanerTests(unittest.TestCase):
     def test_requires_the_upstream_liquidity_columns(self):
         with self.assertRaisesRegex(ValueError, "pricetype"):
             liquid_bonds(pd.DataFrame({"volume": [20_000]}))
-
-
-if __name__ == "__main__":
-    unittest.main()

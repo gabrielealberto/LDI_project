@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-from core.ldi_engine import export_ldi_excel, export_ldi_excel_legacy
+from core.ldi_engine import export_ldi_excel
 
 
 class ExcelExportTests(unittest.TestCase):
@@ -73,14 +73,3 @@ class ExcelExportTests(unittest.TestCase):
         self.assertEqual(workbook["Client Summary"]["A1"].value, "LDI Portfolio")
         self.assertGreaterEqual(len(workbook["Client Summary"]._charts), 2)
         self.assertGreaterEqual(len(workbook["Annual Overview"]._charts), 2)
-
-    def test_legacy_export_remains_available(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = export_ldi_excel_legacy(self.result, Path(directory) / "legacy.xlsx")
-            workbook = load_workbook(output)
-
-        self.assertEqual(workbook.sheetnames, ["Summary", "Purchase plan", "Monthly cash flows"])
-
-
-if __name__ == "__main__":
-    unittest.main()

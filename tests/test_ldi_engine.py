@@ -147,7 +147,3 @@ class LDIOptimizerTests(unittest.TestCase):
         ].sum()
 
         self.assertAlmostEqual(result["weighted_average_maturity_years"], expected)
-
-
-if __name__ == "__main__":
-    unittest.main()

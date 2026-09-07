@@ -104,12 +104,3 @@ class BondDownloader:
             }
 
         return saved
-
-
-if __name__ == "__main__":
-    results = BondDownloader().run()
-    for key, result in results.items():
-        print(
-            f"{key}: {result['rows']} rows, {result['columns']} columns "
-            f"saved to {result['path']}"
-        )

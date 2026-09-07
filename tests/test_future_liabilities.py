@@ -42,7 +42,3 @@ class LiabilityConfigurationTests(unittest.TestCase):
         payments = list(zip(dates[cashflows > 0].strftime("%Y-%m-%d"), cashflows[cashflows > 0]))
 
         self.assertEqual(payments, [("2028-01-01", 5000.0), ("2035-01-01", 5000.0 * 1.025**7)])
-
-
-if __name__ == "__main__":
-    unittest.main()
