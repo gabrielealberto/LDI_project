@@ -13,10 +13,9 @@ BI_INPUT = RAW_DIR / "bonds_bi.parquet"
 FD_OUTPUT = PROCESSED_DIR / "fd_clean.parquet"
 BI_OUTPUT = PROCESSED_DIR / "bi_clean.parquet"
 LIQUID_PRICE_TYPES = frozenset({"LP"})
-# One EUR 1,000 lot is the smallest executable bond position in this mandate.
-# Requiring it excludes zero or negligible prints without treating one quiet
-# trading session as evidence that an otherwise tradable bond is ineligible.
-MIN_DAILY_BOND_VOLUME = 1_000
+# Require a meaningful daily nominal volume, rather than admitting an
+# isolated EUR 1,000 print as evidence of reliable execution liquidity.
+MIN_DAILY_BOND_VOLUME = 20_000
 
 
 def liquid_bonds(
@@ -102,9 +101,10 @@ def clean_bi(df, fd_clean):
     return cleaned.reset_index(drop=True)
 
 
-def run():
-    fd = pd.read_parquet(FD_INPUT)
-    bi = pd.read_parquet(BI_INPUT)
+def run(fd_input=FD_INPUT, bi_input=BI_INPUT):
+    """Clean an explicit immutable raw snapshot into the current universe."""
+    fd = pd.read_parquet(fd_input)
+    bi = pd.read_parquet(bi_input)
 
     fd_clean, report = clean_fd(fd)
     bi_clean = clean_bi(bi, fd_clean)

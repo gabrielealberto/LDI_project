@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from core.ingestion_support import atomic_to_parquet, retry_session
+
 # ISTAT's production SDMX endpoint.  The advertised ``/rest/v2/data`` route
 # is not implemented consistently, while this v1-compatible endpoint is the
 # one published by ISTAT for data access.
@@ -18,10 +20,22 @@ ISTAT_DATA_ROOT = "https://esploradati.istat.it/SDMXWS/rest/data"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
 TIMEOUT = 30
-RIVALUTA_TABLE = (
-    "https://rivaluta.istat.it/Rivaluta/TavoleStream.action?"
-    "meseA=Luglio&annoA=2026&tav=7&ultimoAnno=2026&ultimoMese=Luglio"
+RIVALUTA_BASE = "https://rivaluta.istat.it/Rivaluta/TavoleStream.action"
+ITALIAN_MONTHS = (
+    "Gennaio",
+    "Febbraio",
+    "Marzo",
+    "Aprile",
+    "Maggio",
+    "Giugno",
+    "Luglio",
+    "Agosto",
+    "Settembre",
+    "Ottobre",
+    "Novembre",
+    "Dicembre",
 )
+HTTP_SESSION = retry_session()
 # Official ISTAT linking coefficients.  They are old-base/new-base, therefore
 # index values are divided by their cumulative product to express base 2025=100.
 SPECS = (
@@ -35,7 +49,7 @@ SPECS = (
 def download_sdmx_data(flow: str, key: str) -> dict[str, Any]:
     """Download a single, fully constrained official ISTAT SDMX series."""
     try:
-        response = requests.get(
+        response = HTTP_SESSION.get(
             f"{ISTAT_DATA_ROOT}/{flow}/{key}",
             params={"format": "jsondata"},
             timeout=TIMEOUT,
@@ -51,7 +65,18 @@ def download_sdmx_data(flow: str, key: str) -> dict[str, Any]:
 def download_pre_1996() -> pd.DataFrame:
     """Extract Feb-1992--Dec-1995 from ISTAT's official FOI(nt) workbook."""
     try:
-        response = requests.get(RIVALUTA_TABLE, timeout=TIMEOUT)
+        latest = pd.Timestamp.today().to_period("M") - 1
+        response = HTTP_SESSION.get(
+            RIVALUTA_BASE,
+            params={
+                "meseA": ITALIAN_MONTHS[latest.month - 1],
+                "annoA": latest.year,
+                "tav": 7,
+                "ultimoAnno": latest.year,
+                "ultimoMese": ITALIAN_MONTHS[latest.month - 1],
+            },
+            timeout=TIMEOUT,
+        )
         response.raise_for_status()
         raw = pd.read_excel(BytesIO(response.content), header=None)
     except (requests.RequestException, ValueError) as error:
@@ -228,7 +253,6 @@ def download_foi_series() -> None:
         logging.info("%s: %s observations (%s)", flow, len(frame), base)
         frames.append(frame)
     result = validate_series(pd.concat(frames, ignore_index=True))
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    result.to_parquet(OUTPUT, index=False, engine="pyarrow")
+    atomic_to_parquet(result, OUTPUT)
     check = pd.read_parquet(OUTPUT)
     logging.info("FOI series written: %s observations to %s", len(check), OUTPUT)

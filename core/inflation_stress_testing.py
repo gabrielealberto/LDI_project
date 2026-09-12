@@ -26,6 +26,7 @@ from .inflation_stress import (
 from .utils import (
     BOND_CASHFLOWS_PATH,
     COUPON_TAX_RATE,
+    CAPITAL_GAIN_TAX_RATE,
     INFLATION_BASELINE_PATH,
     INFLATION_STRESS_MONTHLY_PATH,
     INFLATION_STRESS_SUMMARY_PATH,
@@ -45,7 +46,8 @@ def _monthly_after_tax_cashflows(cashflows: pd.DataFrame, lots: pd.Series) -> pd
         lots.rename("lots"), left_on="isincode", right_index=True, how="inner"
     )
     frame["after_tax_eur"] = (
-        after_tax_cashflow_values(frame, COUPON_TAX_RATE) * frame["lots"]
+        after_tax_cashflow_values(frame, COUPON_TAX_RATE, CAPITAL_GAIN_TAX_RATE)
+        * frame["lots"]
     )
     frame["month"] = frame["date"].dt.to_period("M").astype(str)
     per_isin_month = (

@@ -88,6 +88,21 @@ class LDIOptimizerTests(unittest.TestCase):
         self.assertEqual(matrix.loc["TEST", "2030-01"], -1_010.0)
         self.assertEqual(matrix.loc["TEST", "2031-01"], 1_035.0)
 
+    def test_tax_applies_to_capital_gain_at_redemption(self):
+        flows = pd.DataFrame(
+            {
+                "isincode": ["TEST", "TEST"],
+                "date": pd.to_datetime(["2030-01-01", "2031-01-01"]),
+                "l1": [-900.0, 1_000.0],
+                "l2": [0.0, 0.0],
+                "l3": [0.0, 0.0],
+            }
+        )
+        matrix = after_tax_cashflow_matrix(flows)
+
+        self.assertEqual(matrix.loc["TEST", "2030-01"], -900.0)
+        self.assertEqual(matrix.loc["TEST", "2031-01"], 987.5)
+
     def test_broker_commission_uses_rate_minimum_and_maximum(self):
         fees = broker_commission([0.0, 1_000.0, 10_000.0, 20_000.0])
 

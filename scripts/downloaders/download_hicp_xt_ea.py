@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from core.ingestion_support import atomic_to_parquet, retry_session
+
 
 API_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +19,7 @@ OUTPUT_PATH = PROJECT_ROOT / "data" / "hicp_xt_ea.parquet"
 TIMEOUT_SECONDS = 30
 OVERLAP_TOLERANCE = 0.001
 MIN_OVERLAP_MONTHS = 3
+HTTP_SESSION = retry_session()
 
 SERIES = {
     "historical": {
@@ -45,7 +48,7 @@ def download_eurostat_series(specification: dict[str, str]) -> dict[str, Any]:
     }
     url = f"{API_URL}/{specification['dataset']}"
     try:
-        response = requests.get(url, params=params, timeout=TIMEOUT_SECONDS)
+        response = HTTP_SESSION.get(url, params=params, timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
         payload = response.json()
     except requests.RequestException as error:
@@ -238,13 +241,12 @@ def missing_months(series: pd.DataFrame) -> pd.DatetimeIndex:
 
 def save_parquet(series: pd.DataFrame, output_path: Path) -> None:
     """Persist the final typed series as a Parquet file."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     output = series[
         ["date", "hicp_xt_ea", "source_dataset", "original_unit", "is_rebased"]
     ].copy()
     output["date"] = pd.to_datetime(output["date"]).astype("datetime64[ns]")
     output["hicp_xt_ea"] = output["hicp_xt_ea"].astype("float64")
-    output.to_parquet(output_path, index=False, engine="pyarrow")
+    atomic_to_parquet(output, output_path)
 
 
 def download_hicp_series() -> None:

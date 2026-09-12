@@ -6,7 +6,7 @@
     "end_date": "2042-01-01",
     "initial_cashflow": 18000,
     "frequency": "annual",
-    "inflation_rate": 0.025,
+    "inflation_rate": 0.02,
     "indexation": {
       "index_id": "FOI_XT_IT",
       "base_reference_date": "2028-01-01",
@@ -21,7 +21,7 @@
     "end_date": "2046-01-01",
     "initial_cashflow": 18000,
     "frequency": "annual",
-    "inflation_rate": 0.025,
+    "inflation_rate": 0.02,
     "indexation": {
       "index_id": "FOI_XT_IT",
       "base_reference_date": "2028-01-01",

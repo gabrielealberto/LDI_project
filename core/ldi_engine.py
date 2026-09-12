@@ -6,6 +6,9 @@ through their cumulative cash balance. It minimises external funding first,
 then the purchase cost; any remaining funding need is reported explicitly.
 """
 
+from pathlib import Path
+from time import perf_counter
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, brentq, milp
@@ -18,29 +21,41 @@ from .utils import (
     BROKER_MAX_FEE,
     BROKER_MIN_FEE,
     COUPON_TAX_RATE,
+    CAPITAL_GAIN_TAX_RATE,
     MAX_ISSUER_WEIGHT,
     MAX_NOMINAL_PER_BOND,
     MAX_POSITIONS,
     NOMINAL,
     PROCESSED_DIR,
+    SELECTION_EXPLANATIONS_PATH,
     TERMINAL_CAPITAL_RATIO,
     after_tax_cashflow_values,
     optional_numeric as _optional_numeric,
 )
+from .taxation import allocate_purchase_commissions, annual_tax_breakdown
 
 OUTPUT_PATH = PROCESSED_DIR / "ldi_optimization.xlsx"
 MIP_OPTIONS = {"time_limit": 600, "mip_rel_gap": 0.01}
 
 
-def after_tax_cashflow_matrix(cashflows, coupon_tax_rate=COUPON_TAX_RATE):
-    """Build the monthly matrix after tax on coupons only.
+def after_tax_cashflow_matrix(
+    cashflows,
+    coupon_tax_rate=COUPON_TAX_RATE,
+    capital_gain_tax_rate=CAPITAL_GAIN_TAX_RATE,
+    acquisition_costs=None,
+):
+    """Build the monthly matrix after income and capital-gain tax.
 
     ``l1`` is principal/purchase, ``l2`` accrued interest and ``l3`` coupon.
-    Italian government-bond coupon taxation is 12.5% by default.
+    Italian government-bond coupon and capital-gain taxation are 12.5% by
+    default.  Capital-gain losses are retained as zero tax here because their
+    offset depends on the taxpayer's tax regime.
     """
     cashflows = cashflows.copy()
     cashflows["month"] = cashflows["date"].dt.to_period("M").astype(str)
-    cashflows["after_tax"] = after_tax_cashflow_values(cashflows, coupon_tax_rate)
+    cashflows["after_tax"] = after_tax_cashflow_values(
+        cashflows, coupon_tax_rate, capital_gain_tax_rate, acquisition_costs
+    )
     return cashflows.pivot_table(
         index="isincode",
         columns="month",
@@ -113,6 +128,78 @@ def _eligible_bonds(matrix, bonds, months, first_liability_month):
     return matrix.loc[eligible], metadata.reindex(matrix.index[eligible])
 
 
+def _explain_selected_bonds(
+    portfolio,
+    asset_matrix,
+    full_months,
+    full_target,
+    full_assets,
+    full_external_cash,
+    terminal_capital_ratio,
+    total_cost,
+):
+    """Annotate each selected bond with auditable marginal selection reasons."""
+    if portfolio.empty:
+        return portfolio, pd.DataFrame(
+            columns=["isincode", "selection_reason", "binding_constraints"]
+        )
+    portfolio = portfolio.copy()
+    base_balance = np.cumsum(full_assets + full_external_cash - full_target.to_numpy())
+    reasons, constraints = [], []
+    for row in portfolio.itertuples(index=False):
+        isin = str(row.isincode)
+        lots = int(row.lots)
+        unit = asset_matrix.loc[isin].reindex(full_months, fill_value=0.0)
+        without_one = base_balance - np.cumsum(unit.to_numpy(dtype=float))
+        deficit = np.flatnonzero(without_one < -1e-7)
+        if len(deficit):
+            month = full_months[int(deficit[0])]
+            reasons.append(f"Required for cash coverage in {month}")
+            constraints.append(f"cash coverage ({month})")
+            continue
+        unit_total = float(unit.sum())
+        remaining_cost = total_cost - float(row.cost_eur) / lots
+        if (
+            full_assets.sum() - unit_total - full_target.sum()
+            < terminal_capital_ratio * remaining_cost - 1e-7
+        ):
+            reasons.append("Required for the terminal capital buffer")
+            constraints.append("terminal capital buffer")
+            continue
+        if lots > 1:
+            reasons.append(
+                "Cost-optimal feasible position; no single binding constraint"
+            )
+            constraints.append("cost objective / feasibility")
+        else:
+            reasons.append(
+                "Cost-optimal feasible position; no single binding constraint"
+            )
+            constraints.append("cost objective / feasibility")
+    explanations = pd.DataFrame(
+        {
+            "isincode": portfolio["isincode"].astype(str).to_numpy(),
+            "selection_reason": reasons,
+            "binding_constraints": constraints,
+        }
+    )
+    return portfolio, explanations
+
+
+def save_selection_explanations(result, output_path=SELECTION_EXPLANATIONS_PATH):
+    """Persist selection explanations separately from client-facing outputs."""
+    output_path = Path(output_path)
+    explanations = result.get("selection_explanations")
+    if explanations is None:
+        explanations = pd.DataFrame(
+            columns=["isincode", "selection_reason", "binding_constraints"]
+        )
+    output = pd.DataFrame(explanations).copy()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output.to_parquet(output_path, index=False, engine="pyarrow")
+    return Path(output_path)
+
+
 def optimize_cashflow_matching(
     target,
     bond_matrix,
@@ -125,6 +212,7 @@ def optimize_cashflow_matching(
     max_positions=MAX_POSITIONS,
     prefer_short_maturity=True,
     terminal_capital_ratio=TERMINAL_CAPITAL_RATIO,
+    detailed_cashflows=None,
 ):
     """Return integer bond lots, portfolio cash flows and the monthly gap.
 
@@ -157,6 +245,18 @@ def optimize_cashflow_matching(
             "annualized_return": np.nan,
             "max_nominal_per_bond": max_nominal_per_bond,
             "coupon_tax_rate": COUPON_TAX_RATE,
+            "capital_gain_tax_rate": CAPITAL_GAIN_TAX_RATE,
+            "tax_breakdown": pd.DataFrame(
+                columns=[
+                    "year",
+                    "coupon_taxes_eur",
+                    "capital_gain_taxes_eur",
+                    "total_taxes_eur",
+                ]
+            ),
+            "selection_explanations": pd.DataFrame(
+                columns=["isincode", "selection_reason", "binding_constraints"]
+            ),
             "max_issuer_weight": max_issuer_weight,
             "max_positions": max_positions,
             "prefer_short_maturity": prefer_short_maturity,
@@ -393,6 +493,7 @@ def optimize_cashflow_matching(
             [segment_max_lots, np.ones(n_segments), np.full(n_months, np.inf)]
         ),
     )
+    solver_started = perf_counter()
     coverage_solution = milp(
         c=np.concatenate([np.zeros(2 * n_segments), np.ones(n_months)]),
         integrality=integrality,
@@ -424,6 +525,7 @@ def optimize_cashflow_matching(
     )
     if solution.x is None or not solution.success:
         raise RuntimeError(f"Optimization not solved: {solution.message}")
+    solver_elapsed_seconds = perf_counter() - solver_started
 
     segment_lots = np.rint(solution.x[:n_segments]).astype(int)
     lots = np.bincount(segment_bonds, weights=segment_lots, minlength=n_bonds).astype(
@@ -463,7 +565,39 @@ def optimize_cashflow_matching(
         drop=True
     )
 
-    full_assets = full_cashflows @ lots
+    tax_breakdown = pd.DataFrame(
+        columns=[
+            "year",
+            "coupon_taxes_eur",
+            "capital_gain_taxes_eur",
+            "total_taxes_eur",
+        ]
+    )
+    if detailed_cashflows is not None:
+        commissions = allocate_purchase_commissions(portfolio)
+        lots_by_isin = portfolio.set_index("isincode")["lots"].astype(float)
+        commission_per_lot = (commissions / lots_by_isin.replace(0.0, np.nan)).fillna(
+            0.0
+        )
+        exact_matrix = after_tax_cashflow_matrix(
+            detailed_cashflows,
+            capital_gain_tax_rate=CAPITAL_GAIN_TAX_RATE,
+            acquisition_costs=commission_per_lot,
+        )
+        exact_matrix = exact_matrix.reindex(
+            index=matrix.index, columns=full_months, fill_value=0.0
+        ).fillna(0.0)
+        full_assets = exact_matrix.clip(lower=0).to_numpy(dtype=float).T @ lots
+        tax_breakdown = annual_tax_breakdown(
+            detailed_cashflows,
+            portfolio,
+            COUPON_TAX_RATE,
+            CAPITAL_GAIN_TAX_RATE,
+        )
+        asset_matrix = exact_matrix.clip(lower=0)
+    else:
+        full_assets = full_cashflows @ lots
+        asset_matrix = matrix.reindex(columns=full_months, fill_value=0.0).clip(lower=0)
     full_external_cash = np.zeros(len(full_months))
     full_external_cash[event_months] = external_cash
     match = pd.DataFrame(
@@ -481,6 +615,16 @@ def optimize_cashflow_matching(
     )
     match["cash_balance_eur"] = match["net_cashflow_eur"].cumsum()
     total_cost = portfolio["cost_eur"].sum()
+    portfolio, selection_explanations = _explain_selected_bonds(
+        portfolio,
+        asset_matrix,
+        full_months,
+        full_target,
+        full_assets,
+        full_external_cash,
+        terminal_capital_ratio,
+        total_cost,
+    )
     total_inflows = full_assets.sum()
 
     return {
@@ -490,6 +634,10 @@ def optimize_cashflow_matching(
         "uncovered_eur": float(external_cash.sum()),
         "max_nominal_per_bond": max_lots * NOMINAL,
         "coupon_tax_rate": COUPON_TAX_RATE,
+        "capital_gain_tax_rate": CAPITAL_GAIN_TAX_RATE,
+        "tax_breakdown": tax_breakdown,
+        "selection_explanations": selection_explanations,
+        "solver_elapsed_seconds": float(solver_elapsed_seconds),
         "max_issuer_weight": max_issuer_weight,
         "max_positions": max_positions,
         "prefer_short_maturity": prefer_short_maturity,

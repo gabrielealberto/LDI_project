@@ -1,9 +1,12 @@
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import core.pipeline as pipeline
+from scripts.downloaders.bond_downloader import BondSnapshot
+from scripts.downloaders.yield_curve_downloader import CurveSnapshot
 
 
 class PipelineRefreshTests(unittest.TestCase):
@@ -36,18 +39,24 @@ class PipelineRefreshTests(unittest.TestCase):
         root = Path(self.directory.name)
         actions = []
         bond_downloader = Mock()
-        bond_downloader.run.side_effect = lambda: (
-            actions.append("bonds"),
-            self.raw_fd.touch(),
-            self.raw_bi.touch(),
-        )
+
+        def create_bond_snapshot():
+            actions.append("bonds")
+            self.raw_fd.touch()
+            self.raw_bi.touch()
+            return BondSnapshot(date.today(), self.raw_fd, self.raw_bi, True, False)
+
+        bond_downloader.run.side_effect = create_bond_snapshot
         curve_downloader = Mock()
-        curve_downloader.run.side_effect = lambda: (
-            actions.append("curve"),
-            self.curve.touch(),
-        )
+
+        def create_curve_snapshot():
+            actions.append("curve")
+            self.curve.touch()
+            return CurveSnapshot(date.today(), self.curve, True, False)
+
+        curve_downloader.run.side_effect = create_curve_snapshot
         cleaner = Mock(
-            side_effect=lambda: (
+            side_effect=lambda *_args: (
                 actions.append("clean"),
                 self.clean_fd.touch(),
                 self.clean_bi.touch(),
@@ -75,7 +84,6 @@ class PipelineRefreshTests(unittest.TestCase):
                 pipeline,
                 CASHFLOWS_PATH=self.cashflows,
                 BOND_CASHFLOW_MATRIX_PATH=self.matrix,
-                CURVE_PATH=self.curve,
                 INFLATION_BASELINE_PATH=self.baseline,
                 PROJECT_ROOT=root,
             ),

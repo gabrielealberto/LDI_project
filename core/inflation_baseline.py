@@ -32,7 +32,7 @@ class BaselineConfig:
     """Parameters for the deterministic, anchor-and-decay baseline."""
 
     annual_target: float = 0.02
-    convergence_half_life_months: float = 24.0
+    convergence_half_life_months: float = 6.0
     spread_half_life_months: float = 30.0
     seasonal_years: int = 10
     long_run_foi_hicp_log_spread: float = 0.0

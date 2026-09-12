@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
-from .utils import CURVE_PATH
+from .utils import CURVE_ARCHIVE_DIR, CURVE_PATH
 
 CSV_PATH = CURVE_PATH
 
@@ -14,6 +16,21 @@ def load_svensson_params(csv_path, curve_id):
     return params[["BETA0", "BETA1", "BETA2", "BETA3", "TAU1", "TAU2"]].to_numpy(
         dtype=float
     )
+
+
+def latest_curve_path(archive_dir=CURVE_ARCHIVE_DIR, legacy_path=CURVE_PATH):
+    """Return the newest valid archived curve, with legacy-file compatibility."""
+    archive_dir = Path(archive_dir)
+    legacy_path = Path(legacy_path)
+    for path in sorted(archive_dir.glob("yc_????????.parquet"), reverse=True):
+        try:
+            load_svensson_params(path, "ignored")
+            return path
+        except (OSError, ValueError, KeyError):
+            continue
+    if legacy_path.is_file():
+        return legacy_path
+    raise FileNotFoundError("No valid ECB curve snapshot is available.")
 
 
 def svensson_yield(t, beta0, beta1, beta2, beta3, tau1, tau2):

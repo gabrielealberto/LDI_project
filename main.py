@@ -1,5 +1,7 @@
 """Single Visual Studio entry point for the monthly LDI workflow."""
 
+from pathlib import Path
+
 import pandas as pd
 
 from core.ldi_engine import (
@@ -7,7 +9,9 @@ from core.ldi_engine import (
     load_bond_inputs,
     optimize_cashflow_matching,
     print_purchase_plan,
+    save_selection_explanations,
 )
+from core.utils import BOND_CASHFLOWS_PATH
 from core.future_liabilities import baseline_cashflows
 from core.inflation_stress_testing import (
     run_inflation_stress_test,
@@ -58,24 +62,44 @@ def print_inflation_stress_results(stress_report):
     print("=" * 116)
 
 
-def main():
+def main(audit=None):
     """Refresh inputs, solve the mandate, then replay and chart frozen stresses."""
-    for stage in refresh_ldi_inputs():
+    refreshed = (
+        refresh_ldi_inputs(audit=audit) if audit is not None else refresh_ldi_inputs()
+    )
+    for stage in refreshed:
         print(f"Pipeline completed: {stage}")
     dates, cashflows = baseline_cashflows()
     matrix, bonds = load_bond_inputs()
+    detailed_cashflows = pd.read_parquet(BOND_CASHFLOWS_PATH)
     result = optimize_cashflow_matching(
-        pd.DataFrame({"date": dates, "cashflow": cashflows}), matrix, bonds
+        pd.DataFrame({"date": dates, "cashflow": cashflows}),
+        matrix,
+        bonds,
+        detailed_cashflows=detailed_cashflows,
     )
+    if audit is not None:
+        audit.record_solver(result)
+    explanations_path = save_selection_explanations(result)
+    if audit is not None:
+        audit.record_output("selection_explanations", explanations_path)
     print_purchase_plan(result)
-    print(f"Excel exported: {export_ldi_excel(result)}")
+    excel_path = export_ldi_excel(result)
+    if audit is not None:
+        audit.record_output("excel_report", excel_path)
+    print(f"Excel exported: {excel_path}")
     stress_report = run_inflation_stress_test(result, bonds)
     summary_path, monthly_path = save_inflation_stress_results(stress_report)
+    if audit is not None:
+        audit.record_output("inflation_stress_summary", summary_path)
+        audit.record_output("inflation_stress_monthly", monthly_path)
     result["inflation_stress"] = stress_report
     print_inflation_stress_results(stress_report)
     print(f"Stress summary exported: {summary_path}")
     print(f"Stress monthly detail exported: {monthly_path}")
     for path in plot_portfolio(result, stress_report=stress_report):
+        if audit is not None:
+            audit.record_output(f"plot_{Path(path).stem}", path)
         print(f"Chart exported: {path}")
     return result
 
