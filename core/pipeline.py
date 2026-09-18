@@ -64,11 +64,21 @@ def _usable_cached_monthly_index(path, value_column, max_age_months=2):
     return latest >= minimum
 
 
-def refresh_ldi_inputs(audit=None):
+def _report(progress, message):
+    if progress is not None:
+        progress(message)
+
+
+def refresh_ldi_inputs(audit=None, parameters=None, progress=None):
     """Download fresh market data and rebuild every derived LDI input."""
+    from .run_config import RunParameters
+
+    custom_parameters = parameters is not None
+    parameters = parameters or RunParameters()
     completed = []
     clean_bonds = [bond_cleaner.FD_OUTPUT, bond_cleaner.BI_OUTPUT]
 
+    _report(progress, "Checking the bond market snapshot")
     bond_snapshot = BondDownloader().run()
     _require_outputs([bond_snapshot.fd_path, bond_snapshot.bi_path], "bond download")
     if bond_snapshot.fallback:
@@ -97,6 +107,7 @@ def refresh_ldi_inputs(audit=None):
         )
     completed.append("bond data")
 
+    _report(progress, "Checking the ECB yield-curve snapshot")
     curve_snapshot = ECBDownloader().run()
     _require_outputs([curve_snapshot.path], "yield-curve download")
     if curve_snapshot.fallback:
@@ -119,6 +130,7 @@ def refresh_ldi_inputs(audit=None):
         )
     completed.append("yield curve")
 
+    _report(progress, "Preparing the investable bond universe")
     bond_cleaner.run(bond_snapshot.fd_path, bond_snapshot.bi_path)
     _require_outputs(clean_bonds, "bond cleaning")
     if audit is not None:
@@ -126,6 +138,7 @@ def refresh_ldi_inputs(audit=None):
         audit.record_output("bi_clean", bond_cleaner.BI_OUTPUT)
     completed.append("investable universe")
 
+    _report(progress, "Updating the official inflation indices")
     foi_path = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
     hicp_path = PROJECT_ROOT / "data" / "hicp_xt_ea.parquet"
     if _usable_cached_monthly_index(foi_path, "foi_xt_it"):
@@ -159,7 +172,11 @@ def refresh_ldi_inputs(audit=None):
         )
     completed.append("inflation indices")
 
-    build_inflation_baseline()
+    _report(progress, "Building the FOI/HICP inflation baseline")
+    if custom_parameters:
+        build_inflation_baseline(parameters.baseline_config())
+    else:
+        build_inflation_baseline()
     _require_outputs([INFLATION_BASELINE_PATH], "inflation-baseline generation")
     if audit is not None:
         audit.record_input("inflation_baseline", INFLATION_BASELINE_PATH)
@@ -176,7 +193,11 @@ def refresh_ldi_inputs(audit=None):
         )
     completed.append("inflation baseline")
 
-    build_cashflow_outputs()
+    _report(progress, "Generating contractual bond cash flows")
+    if custom_parameters:
+        build_cashflow_outputs(nominal=parameters.nominal)
+    else:
+        build_cashflow_outputs()
     _require_outputs(
         [CASHFLOWS_PATH, BOND_CASHFLOW_MATRIX_PATH],
         "bond cash-flow generation",

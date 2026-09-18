@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LDI Portfolio Manager</title>
+  <meta name="description" content="Professional liability-driven investment portfolio configuration and analysis platform.">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<!-- Toast notification container -->
+<div id="toast-container"></div>
+<div id="app">
+
+  <!-- ─── Sidebar ─────────────────────────────── -->
+  <aside id="sidebar">
+    <div id="sidebar-logo">
+      <div class="product-name">LDI Manager</div>
+      <div class="product-sub">Liability-Driven Investment Platform</div>
+    </div>
+    <nav id="sidebar-nav">
+      <div class="nav-label">Workflow</div>
+      <div class="nav-item active" data-tab="configuration" id="nav-configuration">
+        <span class="nav-icon">⚙</span> Configuration
+      </div>
+      <div class="nav-item" data-tab="run" id="nav-run">
+        <span class="nav-icon">▶</span> Run
+      </div>
+      <div class="nav-item" data-tab="results" id="nav-results">
+        <span class="nav-icon">📊</span> Results
+      </div>
+      <div class="nav-label" style="margin-top:8px">Analysis</div>
+      <div class="nav-item disabled" data-tab="stress" id="nav-stress">
+        <span class="nav-icon">🌡</span> Inflation Shocks
+      </div>
+    </nav>
+    <div id="sidebar-status">
+      <span class="status-dot idle" id="status-dot"></span>
+      <span id="status-text">Idle</span>
+    </div>
+  </aside>
+
+  <!-- ─── Main ────────────────────────────────── -->
+  <div id="main">
+    <header id="header">
+      <div id="header-title">Configuration</div>
+      <span id="header-badge" class="badge-idle header-badge">Idle</span>
+    </header>
+
+    <div id="content">
+
+      <!-- ═══════ TAB: Configuration ═══════ -->
+      <div class="tab-panel active" id="tab-configuration">
+        <div id="config-alert-area"></div>
+
+        <!-- General Settings -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">General Settings</span>
+            <button class="btn btn-sm btn-secondary" id="btn-reset-params">Reset to defaults</button>
+          </div>
+          <div class="panel-body">
+            <div class="alert alert-info" style="margin-bottom:14px">
+              These settings apply to web runs only. Reset restores the same defaults used by <strong>main</strong> from Visual Studio.
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Lot size (EUR nominal)</label>
+                <input class="form-control" type="number" id="param-nominal" min="100" step="100">
+                <div class="form-hint">EUR per bond lot (standard: 1,000)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max nominal per ISIN (EUR)</label>
+                <input class="form-control" type="number" id="param-max_nominal_per_bond" min="1000" step="1000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max positions</label>
+                <input class="form-control" type="number" id="param-max_positions" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max issuer weight</label>
+                <input class="form-control" type="number" id="param-max_issuer_weight" min="0" max="1" step="0.01">
+                <div class="form-hint">Fraction 0–1 (e.g. 0.40 = 40%)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Coupon tax rate</label>
+                <input class="form-control" type="number" id="param-coupon_tax_rate" min="0" max="1" step="0.001">
+                <div class="form-hint">Italian BTP: 0.125 (12.5%)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Terminal capital ratio</label>
+                <input class="form-control" type="number" id="param-terminal_capital_ratio" min="0" step="0.01">
+                <div class="form-hint">Minimum terminal cash / initial cost</div>
+              </div>
+              <div class="form-group" style="grid-column:span 2">
+                <div class="checkbox-group">
+                  <input type="checkbox" id="param-prefer_short_maturity">
+                  <label class="form-label" for="param-prefer_short_maturity">Prefer shorter maturities (secondary objective)</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Broker Fees -->
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Broker Commission</span></div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Fee rate</label>
+                <input class="form-control" type="number" id="param-broker_fee_rate" min="0" step="0.0001">
+                <div class="form-hint">Proportional rate (e.g. 0.0019 = 0.19%)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Minimum fee (EUR)</label>
+                <input class="form-control" type="number" id="param-broker_min_fee" min="0" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Maximum fee (EUR)</label>
+                <input class="form-control" type="number" id="param-broker_max_fee" min="0" step="0.01">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Universe Filters -->
+        <div class="panel">
+          <div class="panel-header collapsible" id="universe-header">
+            <span class="panel-title">Universe Filters</span>
+            <span class="collapse-icon">▼</span>
+          </div>
+          <div class="collapsible-body" id="universe-body">
+            <div class="panel-body">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label flex items-center justify-between" style="display:flex; justify-content:space-between">
+                    <span>Allowed Ratings</span>
+                    <a href="#" class="text-xs" id="btn-universe-ratings-toggle" style="font-weight:normal; font-size:10px">Toggle all</a>
+                  </label>
+                  <div id="universe-ratings-box" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--white); display: flex; flex-direction: column; gap: 6px;">
+                    <!-- Checkboxes injected by JS -->
+                    <span class="text-muted text-xs">Loading...</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label flex items-center justify-between" style="display:flex; justify-content:space-between">
+                    <span>Allowed Issuers</span>
+                    <a href="#" class="text-xs" id="btn-universe-issuers-toggle" style="font-weight:normal; font-size:10px">Toggle all</a>
+                  </label>
+                  <div id="universe-issuers-box" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--white); display: flex; flex-direction: column; gap: 6px;">
+                    <!-- Checkboxes injected by JS -->
+                    <span class="text-muted text-xs">Loading...</span>
+                  </div>
+                </div>
+              </div>
+              <div class="checkbox-group mt-12" style="margin-top: 12px;">
+                <input type="checkbox" id="universe-include-ilb" checked>
+                <label class="form-label" for="universe-include-ilb">Include Inflation-Linked Bonds</label>
+              </div>
+              <div class="form-hint" style="margin-top: 8px;">The canonical investable universe is shown read-only and is rebuilt by the existing pipeline on every run.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Liabilities -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Liabilities</span>
+            <div class="flex gap-8">
+              <button class="btn btn-sm btn-ghost" id="btn-edit-liabilities-json" title="Edit liabilities.json directly">
+                <span style="font-size:13px">{ }</span> Edit JSON
+              </button>
+              <button class="btn btn-sm btn-primary" id="btn-add-liability">+ Add Liability</button>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div id="liabilities-empty" class="hidden" style="padding:24px;text-align:center;color:var(--muted)">
+              No liabilities configured. Click "Add Liability" to define future cash outflows.
+            </div>
+            <div class="table-wrap" id="liabilities-table-wrap">
+              <table class="data-table" id="liabilities-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Start date</th>
+                    <th>End date</th>
+                    <th class="num">Initial CF (EUR)</th>
+                    <th>Frequency</th>
+                    <th>Inflation rate</th>
+                    <th>Index</th>
+                    <th>Probability</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="liabilities-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Baseline Inflation -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Inflation Baseline — FOI / HICP Forecast</span>
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-baseline">Refresh</button>
+          </div>
+          <div class="panel-body">
+            <div id="baseline-alert" class="alert alert-warn hidden">
+              Inflation baseline not available. Run the pipeline at least once to generate the baseline.
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="form-label">Annual target (ECB)</label>
+                  <input class="form-control" type="number" id="param-baseline_annual_target" step="0.001">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Convergence half-life (months)</label>
+                  <input class="form-control" type="number" id="param-baseline_convergence_half_life_months" step="1" min="1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Spread half-life (months)</label>
+                  <input class="form-control" type="number" id="param-baseline_spread_half_life_months" step="1" min="1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Seasonal history (years)</label>
+                  <input class="form-control" type="number" id="param-baseline_seasonal_years" step="1" min="3">
+                </div>
+              </div>
+            </div>
+            <div id="baseline-chart-wrap" class="chart-wrap mt-12" style="height:280px">
+              <canvas id="baseline-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced: Inflation Stress Scenarios -->
+        <div class="panel">
+          <div class="panel-header collapsible" id="advanced-header">
+            <span class="panel-title">Advanced Options — Inflation Stress Scenarios</span>
+            <span class="collapse-icon">▼</span>
+          </div>
+          <div class="collapsible-body collapsed" id="advanced-body">
+            <div class="panel-body">
+              <div class="alert alert-info">
+                Stress scenarios are applied to the frozen optimized portfolio. Each scenario overrides the inflation path and re-computes liability cash flows and asset coverage.
+              </div>
+              <div class="flex items-center gap-8 mb-12">
+                <button class="btn btn-sm btn-primary" id="btn-add-scenario">+ Add Scenario</button>
+                <button class="btn btn-sm btn-ghost" id="btn-edit-scenarios-json" title="Edit inflation_stress_scenarios.json directly">
+                  <span style="font-size:13px">{ }</span> Edit JSON
+                </button>
+                <span class="text-sm text-muted" id="scenario-count"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="scenarios-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Family</th>
+                      <th>Severity</th>
+                      <th>Common shock (bp)</th>
+                      <th>Spread shock (bp)</th>
+                      <th>Start rule</th>
+                      <th>Ramp / Hold / Decay</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="scenarios-tbody"></tbody>
+                </table>
+              </div>
+              <!-- Scenario preview chart -->
+              <div class="mt-16">
+                <div class="form-group mb-8">
+                  <label class="form-label">Preview scenario</label>
+                  <select class="form-control" id="scenario-preview-select" style="width:300px"></select>
+                </div>
+                <div class="chart-wrap" style="height:220px">
+                  <canvas id="scenario-preview-chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-8 mt-8">
+          <button class="btn btn-primary" id="btn-save-config">Save Configuration</button>
+          <span class="text-sm text-muted" style="align-self:center" id="config-save-status"></span>
+        </div>
+      </div><!-- /tab-configuration -->
+
+      <!-- ═══════ JSON EDITOR MODAL (shared) ═══════ -->
+      <div class="modal-overlay hidden" id="json-editor-overlay">
+        <div class="modal" style="width:820px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column">
+          <div class="modal-header">
+            <span class="modal-title" id="json-editor-title">Edit JSON</span>
+            <button class="modal-close" id="json-editor-close">✕</button>
+          </div>
+          <div class="modal-body" style="flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+            <div class="alert alert-info" style="flex-shrink:0">
+              Edit the raw JSON directly. The file will be validated before saving.
+              Changes are applied to the in-memory state — click <strong>Save Configuration</strong> to persist to disk,
+              or use the <strong>Save to File</strong> button below to write directly.
+            </div>
+            <div id="json-editor-error" class="alert alert-error hidden" style="flex-shrink:0"></div>
+            <!-- Toolbar -->
+            <div class="flex gap-8" style="flex-shrink:0">
+              <button class="btn btn-sm btn-secondary" id="json-editor-format">Format</button>
+              <button class="btn btn-sm btn-secondary" id="json-editor-validate">Validate</button>
+              <span class="text-sm text-muted" id="json-editor-char-count" style="align-self:center"></span>
+            </div>
+            <!-- Editor area -->
+            <div style="flex:1;position:relative;min-height:0;">
+              <textarea
+                id="json-editor-textarea"
+                class="json-editor-textarea"
+                spellcheck="false"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="json-editor-cancel">Cancel</button>
+            <button class="btn btn-primary" id="json-editor-apply">Apply Changes</button>
+            <button class="btn btn-navy" id="json-editor-save-file">Save to File</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Run ═══════ -->
+      <div class="tab-panel" id="tab-run">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Pre-flight Checks</span></div>
+          <div class="panel-body">
+            <div class="checklist" id="preflight-list">
+              <div class="check-item"><span class="check-icon warn spinner dark"></span> Checking…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Execution</span></div>
+          <div class="panel-body">
+            <div class="alert alert-info" style="margin-bottom:14px">
+              The full pipeline will: (1) download live bond market data, ECB yield curve, ISTAT FOI and Eurostat HICP; (2) run the MILP optimization; (3) execute all inflation stress tests; (4) export the Excel report.
+            </div>
+            <div class="flex items-center gap-12 mb-12">
+              <button class="btn btn-navy btn-lg" id="btn-run" disabled>
+                <span id="run-btn-icon">▶</span> Run Full Pipeline
+              </button>
+              <div id="run-status-label" class="text-muted text-sm">—</div>
+            </div>
+            <div id="run-progress-wrap" class="hidden">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar indeterminate" id="run-progress-bar"></div>
+              </div>
+            </div>
+            <div id="run-error-box" class="alert alert-error hidden"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Execution Log</span>
+            <button class="btn btn-sm btn-secondary" id="btn-clear-log">Clear</button>
+          </div>
+          <div class="panel-body">
+            <div class="log-console" id="run-log">
+              <div class="log-placeholder" id="log-placeholder">Pipeline not started — press <strong>▶ Run Full Pipeline</strong> to begin.</div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-run -->
+
+      <!-- ═══════ TAB: Results ═══════ -->
+      <div class="tab-panel" id="tab-results">
+        <div id="results-empty-state" class="results-empty-state">
+          <div class="results-empty-icon">📊</div>
+          <h2>No results loaded</h2>
+          <p>
+            Results are not loaded automatically. Run the pipeline to create new results,
+            or explicitly load the latest completed run from the archive.
+          </p>
+          <button class="btn btn-primary" id="btn-load-latest-results">
+            Load latest results
+          </button>
+        </div>
+
+        <div id="results-content" class="hidden">
+        <!-- KPI Bar — grouped into 3 categories -->
+        <div class="kpi-bar" id="kpi-bar">
+          <!-- Group 1: Portfolio -->
+          <div class="kpi-group">
+            <div class="kpi-group-label">Portfolio</div>
+            <div class="kpi-cards">
+              <div class="kpi-card kpi-card-primary">
+                <div class="kpi-label">Total Investment</div>
+                <div class="kpi-value" id="kpi-investment">—</div>
+                <div class="kpi-sub">EUR</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">Positions</div>
+                <div class="kpi-value" id="kpi-positions">—</div>
+                <div class="kpi-sub">bonds</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">Wtd Avg Maturity</div>
+                <div class="kpi-value" id="kpi-wam">—</div>
+                <div class="kpi-sub">years</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">Purchase Commission</div>
+                <div class="kpi-value" id="kpi-commission">—</div>
+                <div class="kpi-sub">EUR</div>
+              </div>
+            </div>
+          </div>
+          <!-- Group 2: Performance (highlighted) -->
+          <div class="kpi-group kpi-group-accent">
+            <div class="kpi-group-label">Performance</div>
+            <div class="kpi-cards">
+              <div class="kpi-card kpi-card-primary">
+                <div class="kpi-label">Residual Shortfall</div>
+                <div class="kpi-value" id="kpi-shortfall">—</div>
+                <div class="kpi-sub">EUR (0 = fully covered)</div>
+              </div>
+              <div class="kpi-card kpi-card-primary">
+                <div class="kpi-label">Terminal Capital</div>
+                <div class="kpi-value" id="kpi-terminal">—</div>
+                <div class="kpi-sub">EUR at end of horizon</div>
+              </div>
+              <div class="kpi-card kpi-card-primary">
+                <div class="kpi-label">Annualized Return (XIRR)</div>
+                <div class="kpi-value" id="kpi-xirr">—</div>
+                <div class="kpi-sub">%</div>
+              </div>
+            </div>
+          </div>
+          <!-- Group 3: Solver -->
+          <div class="kpi-group">
+            <div class="kpi-group-label">Solver</div>
+            <div class="kpi-cards">
+              <div class="kpi-card">
+                <div class="kpi-label">Solver MIP Gap</div>
+                <div class="kpi-value" id="kpi-mipgap">—</div>
+                <div class="kpi-sub"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div class="panel">
+          <div class="sub-tabs">
+            <div class="sub-tab active" data-subtab="portfolio" id="stab-portfolio">Portfolio</div>
+            <div class="sub-tab" data-subtab="cashflows" id="stab-cashflows">Cash Flows</div>
+            <div class="sub-tab" data-subtab="annual" id="stab-annual">Annual Overview</div>
+            <div class="sub-tab" data-subtab="issuers" id="stab-issuers">Issuer Allocation</div>
+            <div class="sub-tab" data-subtab="coverage" id="stab-coverage">Coverage</div>
+            <div class="sub-tab" data-subtab="methodology" id="stab-methodology">Methodology</div>
+          </div>
+
+          <!-- Portfolio sub-tab -->
+          <div class="sub-panel" id="subpanel-portfolio">
+            <div class="panel-body">
+              <div class="table-filter-bar">
+                <input class="table-search" type="text" id="portfolio-search" placeholder="Search ISIN or issuer…">
+                <span class="text-sm text-muted" id="portfolio-count"></span>
+                <button class="btn btn-sm btn-secondary" id="btn-export-excel" style="margin-left:auto">
+                  Export Excel
+                </button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="portfolio-table">
+                  <thead>
+                    <tr>
+                      <th data-col="isincode">ISIN</th>
+                      <th data-col="description">Instrument</th>
+                      <th data-col="issuerdescription">Issuer</th>
+                      <th data-col="ratingsp">S&amp;P</th>
+                      <th data-col="redemptiondate">Maturity</th>
+                      <th data-col="lots" class="num">Lots</th>
+                      <th data-col="nominal_eur" class="num">Nominal (EUR)</th>
+                      <th data-col="purchase_value_eur" class="num">Market value</th>
+                      <th data-col="purchase_commission_eur" class="num">Commission</th>
+                      <th data-col="cost_eur" class="num">Total cost</th>
+                      <th data-col="maturity_years" class="num">Mat. (yrs)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="portfolio-tbody"></tbody>
+                  <tfoot id="portfolio-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cash flows sub-tab -->
+          <div class="sub-panel hidden" id="subpanel-cashflows">
+            <div class="panel-body">
+              <div class="chart-wrap mb-16" style="height:300px">
+                <canvas id="cf-monthly-chart"></canvas>
+              </div>
+              <div class="table-filter-bar">
+                <input class="table-search" type="text" id="cf-search" placeholder="Filter by month…">
+              </div>
+              <div class="table-wrap" style="max-height:400px;overflow-y:auto">
+                <table class="data-table" id="cf-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th class="num">Liabilities (EUR)</th>
+                      <th class="num">Asset CF (EUR)</th>
+                      <th class="num">External (EUR)</th>
+                      <th class="num">Net CF (EUR)</th>
+                      <th class="num">Cash Balance (EUR)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cf-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Annual sub-tab -->
+          <div class="sub-panel hidden" id="subpanel-annual">
+            <div class="panel-body">
+              <div class="chart-wrap mb-16" style="height:300px">
+                <canvas id="cf-annual-chart"></canvas>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="annual-table">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th class="num">Liabilities (EUR)</th>
+                      <th class="num">Asset CF (EUR)</th>
+                      <th class="num">External (EUR)</th>
+                      <th class="num">Net CF (EUR)</th>
+                      <th class="num">Year-end Cash (EUR)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="annual-tbody"></tbody>
+                  <tfoot id="annual-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Issuers sub-tab -->
+          <div class="sub-panel hidden" id="subpanel-issuers">
+            <div class="panel-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                <div class="chart-wrap" style="height:300px">
+                  <canvas id="issuer-chart"></canvas>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table" id="issuer-table">
+                    <thead>
+                      <tr>
+                        <th>Issuer</th>
+                        <th class="num">Invested (EUR)</th>
+                        <th class="num">Weight</th>
+                        <th class="num">Positions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="issuer-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Coverage sub-tab -->
+          <div class="sub-panel hidden" id="subpanel-coverage">
+            <div class="panel-body">
+              <div class="chart-wrap mb-16" style="height:300px">
+                <canvas id="coverage-chart"></canvas>
+              </div>
+              <div class="chart-wrap" style="height:260px">
+                <canvas id="surplus-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Methodology sub-tab -->
+          <div class="sub-panel hidden" id="subpanel-methodology">
+            <div class="panel-body">
+              <div class="methodology-intro" id="methodology-intro"></div>
+              <div class="methodology-sections" id="methodology-sections"></div>
+            </div>
+          </div>
+
+        </div><!-- /panel -->
+        </div><!-- /results-content -->
+      </div><!-- /tab-results -->
+
+      <!-- ═══════ TAB: Stress Analysis ═══════ -->
+      <div class="tab-panel" id="tab-stress">
+        <div id="stress-no-data" class="alert alert-warn hidden">
+          No stress results available. Run the optimization first.
+        </div>
+
+        <!-- Summary table -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Stress Test Summary — Frozen Portfolio</span>
+            <button class="btn btn-sm btn-secondary" id="btn-export-stress-excel">⬇ Export Excel</button>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="data-table sticky-thead" id="stress-summary-table">
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th>Family</th>
+                    <th>Severity</th>
+                    <th class="num">Shock (bp)</th>
+                    <th class="num">Total liabilities</th>
+                    <th class="num">Asset CF</th>
+                    <th class="num">External funding</th>
+                    <th class="num">Min cash</th>
+                    <th class="num">Deficit mo.</th>
+                    <th>First deficit</th>
+                    <th>Outcome</th>
+                  </tr>
+                </thead>
+                <tbody id="stress-summary-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scenario selector -->
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Scenario Comparison Charts</span></div>
+          <div class="panel-body">
+            <div class="form-group mb-12">
+              <label class="form-label">Select scenarios to compare</label>
+              <div id="scenario-checkboxes" class="flex gap-8" style="flex-wrap:wrap;margin-top:6px"></div>
+            </div>
+
+            <!-- Inflation paths -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+              <div>
+                <div class="panel-title mb-8" style="font-size:11px">FOI (Italy) YoY % path</div>
+                <div class="chart-wrap" style="height:220px">
+                  <canvas id="stress-foi-chart"></canvas>
+                </div>
+              </div>
+              <div>
+                <div class="panel-title mb-8" style="font-size:11px">HICP (Euro Area) YoY % path</div>
+                <div class="chart-wrap" style="height:220px">
+                  <canvas id="stress-hicp-chart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Coverage / cashflow charts -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+              <div>
+                <div class="panel-title mb-8" style="font-size:11px">External funding required (EUR)</div>
+                <div class="chart-wrap" style="height:240px">
+                  <canvas id="stress-funding-chart"></canvas>
+                </div>
+              </div>
+              <div>
+                <div class="panel-title mb-8" style="font-size:11px">Cash balance (EUR)</div>
+                <div class="chart-wrap" style="height:240px">
+                  <canvas id="stress-cash-chart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="panel-title mb-8" style="font-size:11px">Asset CF vs Liabilities by scenario (annual aggregation)</div>
+              <div class="chart-wrap" style="height:260px">
+                <canvas id="stress-coverage-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /tab-stress -->
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ─── Liability Modal ───────────────────── -->
+<div class="modal-overlay hidden" id="liability-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="liability-modal-title">Add Liability</span>
+      <button class="modal-close" id="liability-modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:span 2">
+          <label class="form-label">Name</label>
+          <input class="form-control" type="text" id="liab-name" placeholder="e.g. Annual liability 2028-2042">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <input class="form-control" type="text" id="liab-category" value="liability">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Frequency</label>
+          <select class="form-control" id="liab-frequency">
+            <option value="annual">Annual</option>
+            <option value="every_n_years">Every N years</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start date (YYYY-MM-DD)</label>
+          <input class="form-control" type="date" id="liab-start_date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End date (YYYY-MM-DD)</label>
+          <input class="form-control" type="date" id="liab-end_date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial cashflow (EUR)</label>
+          <input class="form-control" type="number" id="liab-initial_cashflow" min="0" step="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Inflation rate (flat fallback)</label>
+          <input class="form-control" type="number" id="liab-inflation_rate" step="0.001" value="0.025">
+          <div class="form-hint">Used only when no indexation is configured</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Probability</label>
+          <input class="form-control" type="number" id="liab-probability" min="0" max="1" step="0.01" value="1">
+        </div>
+        <div class="form-group" id="liab-interval-group">
+          <label class="form-label">Interval years (every_n_years)</label>
+          <input class="form-control" type="number" id="liab-interval_years" min="1" step="1" value="2">
+        </div>
+      </div>
+      <!-- Indexation -->
+      <div class="mt-12">
+        <div class="flex items-center gap-8 mb-8">
+          <div class="checkbox-group">
+            <input type="checkbox" id="liab-use-indexation">
+            <label class="form-label" for="liab-use-indexation">Inflation-indexed (FOI / HICP)</label>
+          </div>
+        </div>
+        <div id="liab-indexation-fields" class="form-grid hidden">
+          <div class="form-group">
+            <label class="form-label">Index ID</label>
+            <select class="form-control" id="liab-index_id">
+              <option value="FOI_XT_IT">FOI_XT_IT (Italian CPI)</option>
+              <option value="HICP_XT_EA">HICP_XT_EA (Euro Area)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Base reference date</label>
+            <input class="form-control" type="date" id="liab-base_reference_date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Observation lag (months)</label>
+            <input class="form-control" type="number" id="liab-observation_lag_months" value="0" min="0" step="1">
+          </div>
+        </div>
+      </div>
+      <div id="liability-modal-error" class="alert alert-error hidden mt-8"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="liability-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="liability-modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Scenario Modal ───────────────────── -->
+<div class="modal-overlay hidden" id="scenario-modal-overlay">
+  <div class="modal" style="width:640px">
+    <div class="modal-header">
+      <span class="modal-title" id="scenario-modal-title">Add Stress Scenario</span>
+      <button class="modal-close" id="scenario-modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:span 2">
+          <label class="form-label">Scenario ID</label>
+          <input class="form-control" type="text" id="scen-scenario_id" placeholder="e.g. custom_scenario_300bp">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Family</label>
+          <select class="form-control" id="scen-family">
+            <option value="transitory">Transitory</option>
+            <option value="persistent">Persistent</option>
+            <option value="regime_shift">Regime Shift</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Severity</label>
+          <select class="form-control" id="scen-severity">
+            <option value="adverse">Adverse</option>
+            <option value="severe">Severe</option>
+            <option value="strategic">Strategic</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start rule</label>
+          <select class="form-control" id="scen-start_rule">
+            <option value="forecast_start">Forecast start</option>
+            <option value="absolute">Absolute date</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start offset (months)</label>
+          <input class="form-control" type="number" id="scen-start_offset_months" value="3" min="0">
+        </div>
+        <div class="form-group" id="scen-start-date-group">
+          <label class="form-label">Start date (absolute)</label>
+          <input class="form-control" type="date" id="scen-start_date">
+        </div>
+      </div>
+      <!-- Transitory / persistent fields -->
+      <div id="scen-shock-fields" class="form-grid mt-12">
+        <div class="form-group">
+          <label class="form-label">Common annual shock (bp)</label>
+          <input class="form-control" type="number" id="scen-common_annual_shock_bp" value="0" step="25">
+        </div>
+        <div class="form-group">
+          <label class="form-label">FOI/HICP spread shock (bp)</label>
+          <input class="form-control" type="number" id="scen-foi_hicp_spread_shock_bp" value="0" step="25">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ramp months</label>
+          <input class="form-control" type="number" id="scen-ramp_months" value="6" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hold months</label>
+          <input class="form-control" type="number" id="scen-hold_months" value="12" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Decay half-life (months)</label>
+          <input class="form-control" type="number" id="scen-decay_half_life_months" value="24" min="1">
+        </div>
+      </div>
+      <!-- Regime shift fields -->
+      <div id="scen-regime-fields" class="form-grid mt-12 hidden">
+        <div class="form-group">
+          <label class="form-label">Long-run HICP target</label>
+          <input class="form-control" type="number" id="scen-long_run_hicp_target" step="0.001" placeholder="e.g. 0.03">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Long-run FOI/HICP spread (bp)</label>
+          <input class="form-control" type="number" id="scen-long_run_foi_hicp_spread_bp" step="5" value="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Convergence half-life (months)</label>
+          <input class="form-control" type="number" id="scen-convergence_half_life_months" step="6" value="60">
+        </div>
+      </div>
+      <div class="form-grid mt-12">
+        <div class="form-group" style="grid-column:span 2">
+          <label class="form-label">Rationale</label>
+          <input class="form-control" type="text" id="scen-rationale" placeholder="Brief description of the scenario rationale">
+        </div>
+        <div class="form-group" style="grid-column:span 2">
+          <label class="form-label">Calibration basis</label>
+          <input class="form-control" type="text" id="scen-calibration_basis" placeholder="How was this scenario calibrated?">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Review frequency (months)</label>
+          <input class="form-control" type="number" id="scen-review_frequency_months" value="12" min="1">
+        </div>
+      </div>
+      <div id="scenario-modal-error" class="alert alert-error hidden mt-8"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="scenario-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="scenario-modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/app.js?v=results-manual-load-2"></script>
+<script src="/static/js/config.js"></script>
+<script src="/static/js/run.js"></script>
+<script src="/static/js/results.js?v=results-manual-load-2"></script>
+<script src="/static/js/stress.js"></script>
+</body>
+</html>

@@ -211,11 +211,11 @@ def build_baseline(
     return baseline
 
 
-def write_baseline() -> None:
+def write_baseline(config: BaselineConfig | None = None) -> None:
     """Write the sole baseline output consumed by the LDI workflow."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     history = load_history()
-    baseline = build_baseline(history, forecast_end_date())
+    baseline = build_baseline(history, forecast_end_date(), config or BaselineConfig())
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     baseline.to_parquet(OUTPUT_PATH, index=False, engine="pyarrow")
     logging.info(

@@ -65,12 +65,15 @@ def after_tax_cashflow_matrix(
     )
 
 
-def broker_commission(order_value):
+def broker_commission(
+    order_value,
+    fee_rate=BROKER_FEE_RATE,
+    minimum_fee=BROKER_MIN_FEE,
+    maximum_fee=BROKER_MAX_FEE,
+):
     """Return the broker fee for positive bond purchase or sale order values."""
     value = np.asarray(order_value, dtype=float)
-    return np.where(
-        value > 0, np.clip(value * BROKER_FEE_RATE, BROKER_MIN_FEE, BROKER_MAX_FEE), 0.0
-    )
+    return np.where(value > 0, np.clip(value * fee_rate, minimum_fee, maximum_fee), 0.0)
 
 
 def annualized_return(initial_cost, months, cashflows):
@@ -91,9 +94,15 @@ def annualized_return(initial_cost, months, cashflows):
         return np.nan
 
 
-def load_bond_inputs(cashflows_path=BOND_CASHFLOWS_PATH, bonds_path=BONDS_PATH):
+def load_bond_inputs(
+    cashflows_path=BOND_CASHFLOWS_PATH,
+    bonds_path=BONDS_PATH,
+    coupon_tax_rate=COUPON_TAX_RATE,
+):
     """Load the coupon-tax-adjusted matrix and output metadata."""
-    matrix = after_tax_cashflow_matrix(pd.read_parquet(cashflows_path))
+    matrix = after_tax_cashflow_matrix(
+        pd.read_parquet(cashflows_path), coupon_tax_rate=coupon_tax_rate
+    )
     bonds = pd.read_parquet(bonds_path)
     return matrix, bonds
 
@@ -213,6 +222,11 @@ def optimize_cashflow_matching(
     prefer_short_maturity=True,
     terminal_capital_ratio=TERMINAL_CAPITAL_RATIO,
     detailed_cashflows=None,
+    nominal=NOMINAL,
+    coupon_tax_rate=COUPON_TAX_RATE,
+    broker_fee_rate=BROKER_FEE_RATE,
+    broker_min_fee=BROKER_MIN_FEE,
+    broker_max_fee=BROKER_MAX_FEE,
 ):
     """Return integer bond lots, portfolio cash flows and the monthly gap.
 
@@ -244,7 +258,8 @@ def optimize_cashflow_matching(
             "roi": 0.0,
             "annualized_return": np.nan,
             "max_nominal_per_bond": max_nominal_per_bond,
-            "coupon_tax_rate": COUPON_TAX_RATE,
+            "nominal": nominal,
+            "coupon_tax_rate": coupon_tax_rate,
             "capital_gain_tax_rate": CAPITAL_GAIN_TAX_RATE,
             "tax_breakdown": pd.DataFrame(
                 columns=[
@@ -293,7 +308,7 @@ def optimize_cashflow_matching(
     # not an operating portfolio cash flow; all later coupons/redemptions are.
     _ = candidate_limit
     purchase_costs = -matrix.clip(upper=0).sum(axis=1).to_numpy(dtype=float)
-    price_costs = _optional_numeric(metadata["price"]).to_numpy() * NOMINAL / 100
+    price_costs = _optional_numeric(metadata["price"]).to_numpy() * nominal / 100
     costs = np.where(purchase_costs > 0, purchase_costs, price_costs)
     full_months = months
     full_target = target
@@ -305,15 +320,23 @@ def optimize_cashflow_matching(
     cashflows = cashflows[event_months]
     n_bonds, n_months = len(matrix), len(months)
 
-    max_lots = int(max_nominal_per_bond // NOMINAL)
+    if nominal <= 0:
+        raise ValueError("nominal must be strictly positive.")
+    max_lots = int(max_nominal_per_bond // nominal)
     if max_lots < 1:
-        raise ValueError(f"max_nominal_per_bond must be at least EUR {NOMINAL:,.0f}.")
+        raise ValueError(f"max_nominal_per_bond must be at least EUR {nominal:,.0f}.")
     if not 0 <= max_issuer_weight <= 1:
         raise ValueError("max_issuer_weight must be between 0 and 1.")
     if int(max_positions) != max_positions or max_positions < 0:
         raise ValueError("max_positions must be a non-negative integer.")
     if terminal_capital_ratio < 0:
         raise ValueError("terminal_capital_ratio must be non-negative.")
+    if broker_fee_rate < 0 or not 0 <= broker_min_fee <= broker_max_fee:
+        raise ValueError(
+            "Broker fees must satisfy rate >= 0 and 0 <= minimum <= maximum."
+        )
+    if not 0 <= coupon_tax_rate <= 1:
+        raise ValueError("coupon_tax_rate must be between 0 and 1.")
 
     if {"redemptiondate", "referencedate"}.issubset(metadata.columns):
         redemption = pd.to_datetime(metadata["redemptiondate"], dayfirst=True)
@@ -334,19 +357,27 @@ def optimize_cashflow_matching(
     segment_lot_costs = []
     segment_fixed_fees = []
     for bond_index, unit_cost in enumerate(costs):
-        low_max = min(
-            max_lots,
-            int(np.floor((BROKER_MIN_FEE + 1e-12) / (BROKER_FEE_RATE * unit_cost))),
-        )
-        proportional_max = min(
-            max_lots,
-            int(np.floor((BROKER_MAX_FEE + 1e-12) / (BROKER_FEE_RATE * unit_cost))),
-        )
-        regions = [
-            (1, low_max, unit_cost, BROKER_MIN_FEE),
-            (low_max + 1, proportional_max, unit_cost * (1 + BROKER_FEE_RATE), 0.0),
-            (proportional_max + 1, max_lots, unit_cost, BROKER_MAX_FEE),
-        ]
+        if broker_fee_rate == 0:
+            regions = [(1, max_lots, unit_cost, broker_min_fee)]
+        else:
+            low_max = min(
+                max_lots,
+                int(np.floor((broker_min_fee + 1e-12) / (broker_fee_rate * unit_cost))),
+            )
+            proportional_max = min(
+                max_lots,
+                int(np.floor((broker_max_fee + 1e-12) / (broker_fee_rate * unit_cost))),
+            )
+            regions = [
+                (1, low_max, unit_cost, broker_min_fee),
+                (
+                    low_max + 1,
+                    proportional_max,
+                    unit_cost * (1 + broker_fee_rate),
+                    0.0,
+                ),
+                (proportional_max + 1, max_lots, unit_cost, broker_max_fee),
+            ]
         for minimum, maximum, lot_cost, fixed_fee in regions:
             if minimum <= maximum:
                 segment_bonds.append(bond_index)
@@ -551,10 +582,13 @@ def optimize_cashflow_matching(
         .rename(columns={"index": "isincode"})
     )
     portfolio["lots"] = lots[selected]
-    portfolio["nominal_eur"] = portfolio["lots"] * NOMINAL
+    portfolio["nominal_eur"] = portfolio["lots"] * nominal
     portfolio["purchase_value_eur"] = costs[selected] * portfolio["lots"].to_numpy()
     portfolio["purchase_commission_eur"] = broker_commission(
-        portfolio["purchase_value_eur"]
+        portfolio["purchase_value_eur"],
+        broker_fee_rate,
+        broker_min_fee,
+        broker_max_fee,
     )
     portfolio["sale_commission_eur"] = 0.0
     portfolio["cost_eur"] = (
@@ -581,6 +615,7 @@ def optimize_cashflow_matching(
         )
         exact_matrix = after_tax_cashflow_matrix(
             detailed_cashflows,
+            coupon_tax_rate=coupon_tax_rate,
             capital_gain_tax_rate=CAPITAL_GAIN_TAX_RATE,
             acquisition_costs=commission_per_lot,
         )
@@ -591,7 +626,7 @@ def optimize_cashflow_matching(
         tax_breakdown = annual_tax_breakdown(
             detailed_cashflows,
             portfolio,
-            COUPON_TAX_RATE,
+            coupon_tax_rate,
             CAPITAL_GAIN_TAX_RATE,
         )
         asset_matrix = exact_matrix.clip(lower=0)
@@ -632,8 +667,9 @@ def optimize_cashflow_matching(
         "cashflow_match": match,
         "status": solution.message,
         "uncovered_eur": float(external_cash.sum()),
-        "max_nominal_per_bond": max_lots * NOMINAL,
-        "coupon_tax_rate": COUPON_TAX_RATE,
+        "max_nominal_per_bond": max_lots * nominal,
+        "nominal": nominal,
+        "coupon_tax_rate": coupon_tax_rate,
         "capital_gain_tax_rate": CAPITAL_GAIN_TAX_RATE,
         "tax_breakdown": tax_breakdown,
         "selection_explanations": selection_explanations,

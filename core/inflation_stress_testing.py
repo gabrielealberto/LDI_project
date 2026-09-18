@@ -34,7 +34,11 @@ from .utils import (
 )
 
 
-def _monthly_after_tax_cashflows(cashflows: pd.DataFrame, lots: pd.Series) -> pd.Series:
+def _monthly_after_tax_cashflows(
+    cashflows: pd.DataFrame,
+    lots: pd.Series,
+    coupon_tax_rate: float = COUPON_TAX_RATE,
+) -> pd.Series:
     """Aggregate frozen flows using the optimizer's monthly netting convention."""
     required = {"isincode", "date", "l1", "l2", "l3"}
     if missing := required - set(cashflows):
@@ -46,7 +50,7 @@ def _monthly_after_tax_cashflows(cashflows: pd.DataFrame, lots: pd.Series) -> pd
         lots.rename("lots"), left_on="isincode", right_index=True, how="inner"
     )
     frame["after_tax_eur"] = (
-        after_tax_cashflow_values(frame, COUPON_TAX_RATE, CAPITAL_GAIN_TAX_RATE)
+        after_tax_cashflow_values(frame, coupon_tax_rate, CAPITAL_GAIN_TAX_RATE)
         * frame["lots"]
     )
     frame["month"] = frame["date"].dt.to_period("M").astype(str)
@@ -61,6 +65,8 @@ def _frozen_asset_cashflows(
     bonds: pd.DataFrame,
     scenario_provider,
     base_cashflows_path: Path,
+    nominal: float,
+    coupon_tax_rate: float,
 ) -> pd.Series:
     """Replace only indexed positions with scenario-consistent contractual flows."""
     if portfolio.empty:
@@ -119,7 +125,10 @@ def _frozen_asset_cashflows(
         <= historical_indexed["referencedate"]
     ].drop(columns="referencedate")
     stressed_indexed = build_inflation_linked_cashflows(
-        selected_indexed, provider=scenario_provider, require_all_terms=False
+        selected_indexed,
+        provider=scenario_provider,
+        require_all_terms=False,
+        nominal_per_lot=nominal,
     )
     stressed_indexed = stressed_indexed.merge(
         reference_dates, on="isincode", how="inner", validate="many_to_one"
@@ -133,7 +142,7 @@ def _frozen_asset_cashflows(
         if not frame.empty
     ]
     detailed = pd.concat(cashflow_parts, ignore_index=True)
-    return _monthly_after_tax_cashflows(detailed, frozen_lots)
+    return _monthly_after_tax_cashflows(detailed, frozen_lots, coupon_tax_rate)
 
 
 def replay_frozen_cashflows(
@@ -184,6 +193,8 @@ def run_inflation_stress_test(
     foi_path: Path = FOI_PATH,
     hicp_path: Path = HICP_PATH,
     base_cashflows_path: Path = BOND_CASHFLOWS_PATH,
+    nominal: float = 1_000,
+    coupon_tax_rate: float = COUPON_TAX_RATE,
 ) -> dict:
     """Replay one solved portfolio under baseline plus each configured stress."""
     if "portfolio" not in result:
@@ -205,7 +216,12 @@ def run_inflation_stress_test(
         )
         dates, liabilities = cashflows_for_provider(provider)
         asset = _frozen_asset_cashflows(
-            result["portfolio"], bonds, provider, Path(base_cashflows_path)
+            result["portfolio"],
+            bonds,
+            provider,
+            Path(base_cashflows_path),
+            nominal,
+            coupon_tax_rate,
         )
         monthly = replay_frozen_cashflows(asset, dates, liabilities)
         monthly.insert(0, "scenario_id", scenario.scenario_id)

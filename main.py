@@ -1,7 +1,5 @@
 """Single Visual Studio entry point for the monthly LDI workflow."""
 
-from pathlib import Path
-
 import pandas as pd
 
 from core.ldi_engine import (
@@ -18,7 +16,12 @@ from core.inflation_stress_testing import (
     save_inflation_stress_results,
 )
 from core.pipeline import refresh_ldi_inputs
-from core.plots import plot_portfolio
+from core.run_config import RunParameters
+
+
+def _report(progress, message):
+    if progress is not None:
+        progress(message)
 
 
 def print_inflation_stress_results(stress_report):
@@ -62,24 +65,42 @@ def print_inflation_stress_results(stress_report):
     print("=" * 116)
 
 
-def main(audit=None):
+def main(audit=None, parameters: RunParameters | None = None, progress=None):
     """Refresh inputs, solve the mandate, then replay and chart frozen stresses."""
-    refreshed = (
-        refresh_ldi_inputs(audit=audit) if audit is not None else refresh_ldi_inputs()
+    parameters = parameters or RunParameters()
+    parameters.validate()
+    if audit is not None:
+        audit.record_configuration_data("run_parameters", parameters.to_dict())
+    refreshed = refresh_ldi_inputs(
+        audit=audit, parameters=parameters, progress=progress
     )
     for stage in refreshed:
         print(f"Pipeline completed: {stage}")
+    _report(progress, "Building the liability schedule")
     dates, cashflows = baseline_cashflows()
-    matrix, bonds = load_bond_inputs()
+    _report(progress, "Loading validated bond cash flows")
+    matrix, bonds = load_bond_inputs(coupon_tax_rate=parameters.coupon_tax_rate)
     detailed_cashflows = pd.read_parquet(BOND_CASHFLOWS_PATH)
+    _report(progress, "Solving the cash-flow matching portfolio")
     result = optimize_cashflow_matching(
         pd.DataFrame({"date": dates, "cashflow": cashflows}),
         matrix,
         bonds,
         detailed_cashflows=detailed_cashflows,
+        nominal=parameters.nominal,
+        max_nominal_per_bond=parameters.max_nominal_per_bond,
+        coupon_tax_rate=parameters.coupon_tax_rate,
+        max_issuer_weight=parameters.max_issuer_weight,
+        max_positions=parameters.max_positions,
+        prefer_short_maturity=parameters.prefer_short_maturity,
+        terminal_capital_ratio=parameters.terminal_capital_ratio,
+        broker_fee_rate=parameters.broker_fee_rate,
+        broker_min_fee=parameters.broker_min_fee,
+        broker_max_fee=parameters.broker_max_fee,
     )
     if audit is not None:
         audit.record_solver(result)
+    _report(progress, "Preparing selection audit data")
     explanations_path = save_selection_explanations(result)
     if audit is not None:
         audit.record_output("selection_explanations", explanations_path)
@@ -88,7 +109,14 @@ def main(audit=None):
     if audit is not None:
         audit.record_output("excel_report", excel_path)
     print(f"Excel exported: {excel_path}")
-    stress_report = run_inflation_stress_test(result, bonds)
+    _report(progress, "Running inflation stress scenarios")
+    stress_report = run_inflation_stress_test(
+        result,
+        bonds,
+        nominal=parameters.nominal,
+        coupon_tax_rate=parameters.coupon_tax_rate,
+    )
+    _report(progress, "Saving stress-test results")
     summary_path, monthly_path = save_inflation_stress_results(stress_report)
     if audit is not None:
         audit.record_output("inflation_stress_summary", summary_path)
@@ -97,10 +125,7 @@ def main(audit=None):
     print_inflation_stress_results(stress_report)
     print(f"Stress summary exported: {summary_path}")
     print(f"Stress monthly detail exported: {monthly_path}")
-    for path in plot_portfolio(result, stress_report=stress_report):
-        if audit is not None:
-            audit.record_output(f"plot_{Path(path).stem}", path)
-        print(f"Chart exported: {path}")
+    _report(progress, "Pipeline completed successfully")
     return result
 
 

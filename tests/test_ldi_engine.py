@@ -108,6 +108,40 @@ class LDIOptimizerTests(unittest.TestCase):
 
         self.assertEqual(list(fees), [0.0, 2.95, 19.0, 19.0])
 
+    def test_broker_commission_accepts_per_run_parameters(self):
+        fees = broker_commission(
+            [0.0, 1_000.0, 10_000.0],
+            fee_rate=0.001,
+            minimum_fee=1.5,
+            maximum_fee=5.0,
+        )
+
+        self.assertEqual(list(fees), [0.0, 1.5, 5.0])
+
+    def test_optimizer_uses_custom_lot_and_broker_parameters(self):
+        target = pd.DataFrame({"date": ["2030-01-01"], "cashflow": [500.0]})
+        matrix = pd.DataFrame(
+            {"2030-01": [500.0]},
+            index=pd.Index(["EARLY"], name="isincode"),
+        )
+        result = optimize_cashflow_matching(
+            target,
+            matrix,
+            self.bonds.iloc[[0]],
+            nominal=500,
+            max_nominal_per_bond=1_000,
+            broker_fee_rate=0.001,
+            broker_min_fee=1.0,
+            broker_max_fee=5.0,
+            terminal_capital_ratio=0,
+        )
+        position = result["portfolio"].iloc[0]
+
+        self.assertEqual(position["nominal_eur"], 500.0)
+        self.assertEqual(position["purchase_value_eur"], 450.0)
+        self.assertEqual(position["purchase_commission_eur"], 1.0)
+        self.assertEqual(result["nominal"], 500.0)
+
     def test_purchase_commission_is_included_in_cost_and_return(self):
         target = pd.DataFrame({"date": ["2030-01-01"], "cashflow": [1_000.0]})
         result = optimize_cashflow_matching(

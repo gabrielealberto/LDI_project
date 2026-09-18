@@ -118,6 +118,19 @@ class RunAudit:
             "content": _json_value(json.loads(path.read_text(encoding="utf-8"))),
         }
 
+    def record_configuration_data(self, name: str, content: dict) -> None:
+        """Record an in-memory, per-run configuration without a shared file."""
+        import hashlib
+
+        normalised = _json_value(content)
+        encoded = json.dumps(normalised, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        self.configuration[name] = {
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "content": normalised,
+        }
+
     def record_fallback(self, dataset: str, **metadata) -> None:
         self.fallbacks.append({"dataset": dataset, **_json_value(metadata)})
 

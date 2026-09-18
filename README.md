@@ -3,7 +3,8 @@
 Workflow Python per costruire un portafoglio obbligazionario che copra una
 schedule di passività future mensili. Il progetto scarica dati ufficiali e di
 mercato, li valida, costruisce i cash flow, risolve un problema MILP e produce
-Excel, audit Parquet e grafici.
+Excel e audit Parquet. I grafici sono generati soltanto dall'entry point
+dedicato.
 
 Il progetto è pensato per un’esecuzione batch schedulata. `main.py` resta
 compatibile come entry point interattivo; per l’esecuzione operativa usare
@@ -30,8 +31,11 @@ scripts/run_ldi.py
            +-- validazione e pulizia
            +-- cash flow generation
            +-- MILP cash-flow matching
-           +-- stress test, Excel e grafici
+           +-- stress test ed Excel
 ```
+
+La generazione dei grafici è separata dalla pipeline ordinaria ed è avviata
+esplicitamente tramite `plot.py`.
 
 I downloader condividono primitive operative in
 `core/ingestion_support.py`:
@@ -82,6 +86,49 @@ python main.py
 
 Questa modalità non aggiunge il lock e il manifest; per un job schedulato usare
 sempre `scripts/run_ldi.py`.
+
+## Web app locale
+
+La web app è un adattatore della pipeline batch, non una seconda
+implementazione del modello. Il pulsante **Run Full Pipeline** avvia in un
+processo separato lo stesso contratto operativo usato dallo scheduler:
+`execute_with_manifest(main)`. Di conseguenza vengono prodotti gli stessi
+snapshot, Parquet, manifest, stress test e report Excel.
+
+Avvio locale con il server WSGI Waitress:
+
+```powershell
+python -m Webapp.server
+```
+
+Il server apre automaticamente Google Chrome su
+`http://192.168.3.164:5000/`, indirizzo LAN predefinito. Host e porta possono
+essere modificati tramite `LDI_WEB_HOST` e `LDI_WEB_PORT`; per usare un host
+diverso nel browser impostare `LDI_WEB_BROWSER_HOST`. L'apertura automatica si
+disattiva con `LDI_WEB_OPEN_BROWSER=0`.
+
+Ogni esecuzione web ha un identificativo persistente e una directory dedicata:
+
+```text
+data/webapp/
+|-- runs.sqlite3
+|-- config_history/
+`-- runs/<web_run_id>/
+    |-- request.json
+    |-- execution.log
+    `-- artifacts/
+```
+
+SQLite conserva lo stato operativo; DataFrame e risultati restano in Parquet.
+Il processo web non duplica download, tassazione, solver o stress test. Il lock
+globale della pipeline impedisce inoltre la sovrapposizione tra un run web e un
+run avviato da Visual Studio o dallo scheduler.
+
+Le liabilities, gli scenari e i parametri esposti nella UI possono essere
+modificati dopo validazione. Il profilo web viene salvato separatamente e ogni
+run archivia lo snapshot esatto dei parametri utilizzati. `Universe Filters`
+rimane in sola lettura e continua a usare l'universo canonico della pipeline.
+L'esecuzione diretta di `main.py` mantiene i valori predefiniti del progetto.
 
 ## Schedulazione consigliata
 
@@ -167,6 +214,13 @@ aggregato al mese del pagamento.
 
 ## Output
 
+I grafici non fanno parte di `main.py`, dello scheduler o dei run web. Per
+eseguire il workflow e generarli esplicitamente:
+
+```powershell
+python plot.py
+```
+
 Gli artefatti generati sono locali e non devono essere committati:
 
 - `data/processed/ldi_optimization.xlsx` — report Excel;
@@ -228,8 +282,9 @@ data/config/                  configurazione contrattuale versionata
 data/raw/                     input raw locali, non versionati
 data/processed/               output derivati, non versionati
 tests/                        test unitari e contrattuali
+Webapp/                       UI, API e adattatore isolato della pipeline
 ```
 
-Il progetto non è un servizio web: è un batch finanziario con output auditabili.
-Prima dell’uso produttivo vanno configurati account tecnico, directory assolute,
-backup degli artefatti e un canale di alerting operativo.
+Il dominio resta un batch finanziario con output auditabili; la web app ne è
+un'interfaccia LAN. Prima di un'esposizione oltre una rete fidata o multiutente vanno
+aggiunti autenticazione, TLS, autorizzazioni, backup esterno e alerting.

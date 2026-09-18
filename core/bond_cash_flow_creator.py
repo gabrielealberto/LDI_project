@@ -215,7 +215,7 @@ def load_cashflow_overrides(
     return overrides.sort_values(["isincode", "date"]).reset_index(drop=True)
 
 
-def apply_cashflow_overrides(cashflows, overrides, bonds):
+def apply_cashflow_overrides(cashflows, overrides, bonds, nominal=NOMINAL):
     """Replace generated future flows for each override ISIN, without touching other bonds."""
     replacement_isins = set(overrides["isincode"])
     reference_dates = (
@@ -240,6 +240,7 @@ def apply_cashflow_overrides(cashflows, overrides, bonds):
     effective_overrides = effective_overrides.loc[
         effective_overrides["date"] > effective_overrides["referencedate"]
     ].drop(columns="referencedate")
+    effective_overrides[["l1", "l2", "l3"]] *= float(nominal) / NOMINAL
     return (
         pd.concat([retained, effective_overrides], ignore_index=True)
         .sort_values(["isincode", "date"])
@@ -260,7 +261,7 @@ def monthly_cashflow_matrix(cashflows):
     )
 
 
-def build_cashflow_outputs():
+def build_cashflow_outputs(nominal=NOMINAL):
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
     all_bonds = merge_clean_bonds(fd_clean, bi_clean)
@@ -272,7 +273,7 @@ def build_cashflow_outputs():
             f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}"
         )
 
-    bonds, comparison = validated_bonds(all_bonds)
+    bonds, comparison = validated_bonds(all_bonds, nominal=nominal)
     # These structured bonds are validated against their explicit schedules,
     # rather than the generic fixed-coupon cash-flow generator.
     override_bonds = all_bonds.loc[all_bonds["isincode"].isin(override_isins)]
@@ -296,9 +297,13 @@ def build_cashflow_outputs():
     nominal_bonds = bonds.loc[
         ~bonds["isincode"].isin(inflation_linked_isins)
     ].reset_index(drop=True)
-    cashflows = create_all_cashflows(nominal_bonds)
-    cashflows = apply_cashflow_overrides(cashflows, overrides, nominal_bonds)
-    inflation_cashflows = build_inflation_linked_cashflows(inflation_linked_bonds)
+    cashflows = create_all_cashflows(nominal_bonds, nominal=nominal)
+    cashflows = apply_cashflow_overrides(
+        cashflows, overrides, nominal_bonds, nominal=nominal
+    )
+    inflation_cashflows = build_inflation_linked_cashflows(
+        inflation_linked_bonds, nominal_per_lot=nominal
+    )
     cashflows = pd.concat([cashflows, inflation_cashflows], ignore_index=True)
     bonds = pd.concat([nominal_bonds, inflation_linked_bonds], ignore_index=True)
     matrix = monthly_cashflow_matrix(cashflows)

@@ -328,6 +328,7 @@ def build_inflation_linked_cashflows(
     provider: BaselineIndexProvider | None = None,
     terms_path: Path = CONFIG_PATH,
     require_all_terms: bool = True,
+    nominal_per_lot: float | None = None,
 ) -> pd.DataFrame:
     """Return baseline cash flows in the same schema as nominal bonds."""
     terms = load_inflation_linked_terms(terms_path)
@@ -353,6 +354,11 @@ def build_inflation_linked_cashflows(
             ],
             ignore_index=True,
         )
+        if nominal_per_lot is not None:
+            configured_nominal = float(terms[isincode]["nominal_per_lot"])
+            if nominal_per_lot <= 0 or configured_nominal <= 0:
+                raise ValueError("Nominal per lot must be strictly positive.")
+            flows[["l1", "l2", "l3"]] *= float(nominal_per_lot) / configured_nominal
         flows.insert(0, "isincode", isincode)
         rows.append(flows)
     if not rows:
