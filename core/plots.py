@@ -2,6 +2,11 @@
 
 from pathlib import Path
 
+import matplotlib
+
+# The pipeline writes figures to disk and does not need a GUI backend.  Using
+# Agg keeps scheduled/server runs independent from Tk and an attached desktop.
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 from matplotlib.ticker import FuncFormatter, PercentFormatter

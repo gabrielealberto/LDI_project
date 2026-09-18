@@ -5,6 +5,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from Webapp.api.routes_config import load_parameters
 from Webapp.service import RunConflict
 from core.run_config import RunParameters
+from core.run_config import UniverseFilters
 
 
 bp = Blueprint("run", __name__, url_prefix="/api/run")
@@ -30,28 +31,20 @@ def start_run():
     unknown = set(body) - {"parameters", "universe_filters"}
     if unknown:
         return jsonify({"error": f"Unknown run options: {sorted(unknown)}"}), 400
-    if body.get("universe_filters"):
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Per-run universe filters are not enabled because they would "
-                        "make the web run differ from the canonical desktop pipeline."
-                    )
-                }
-            ),
-            400,
-        )
     try:
         parameters = (
             RunParameters.from_mapping(body["parameters"])
             if "parameters" in body
             else load_parameters()
         )
+        universe_filters = UniverseFilters.from_mapping(body.get("universe_filters"))
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     try:
-        payload = {"parameters": parameters.to_dict()}
+        payload = {
+            "parameters": parameters.to_dict(),
+            "universe_filters": universe_filters.to_dict(),
+        }
         record = current_app.extensions["run_service"].start(payload)
     except RunConflict as error:
         return jsonify({"error": str(error)}), 409

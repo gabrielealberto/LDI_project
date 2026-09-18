@@ -251,17 +251,33 @@ def readiness():
 @bp.get("/universe")
 def get_universe_options():
     from core.utils import FD_CLEAN_PATH
+    from scripts.cleaners.bond_cleaner import RATING_ORDER, canonical_rating
 
     if not FD_CLEAN_PATH.exists():
         return jsonify({"ratings": [], "issuers": [], "editable": False})
     try:
         frame = pd.read_parquet(
-            FD_CLEAN_PATH, columns=["ratingsp", "issuerdescription"]
+            FD_CLEAN_PATH,
+            columns=["ratingsp", "ratingmoodys", "issuercode", "issuerdescription"],
         )
-        ratings = sorted(str(value) for value in frame["ratingsp"].dropna().unique())
-        issuers = sorted(
-            str(value) for value in frame["issuerdescription"].dropna().unique()
+        ratings = {
+            rating
+            for column, agency in (("ratingsp", "sp"), ("ratingmoodys", "moodys"))
+            for value in frame[column].dropna()
+            if (rating := canonical_rating(value, agency)) is not None
+        }
+        issuer_rows = frame[["issuercode", "issuerdescription"]].dropna(
+            subset=["issuercode"]
+        ).drop_duplicates("issuercode").copy()
+        issuers = []
+        for row in issuer_rows.itertuples(index=False):
+            code = str(row.issuercode)
+            label = row.issuerdescription if pd.notna(row.issuerdescription) else code
+            issuers.append({"code": code, "label": str(label)})
+        issuers.sort(key=lambda item: item["label"].casefold())
+        ordered_ratings = [rating for rating in RATING_ORDER if rating in ratings]
+        return jsonify(
+            {"ratings": ordered_ratings, "issuers": issuers, "editable": True}
         )
-        return jsonify({"ratings": ratings, "issuers": issuers, "editable": False})
     except (OSError, ValueError, KeyError) as error:
         return jsonify({"error": f"Invalid bond universe: {error}"}), 500

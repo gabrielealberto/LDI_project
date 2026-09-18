@@ -116,6 +116,44 @@ class RunParameters:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class UniverseFilters:
+    """Per-run restrictions applied after static bond cleaning."""
+
+    allowed_ratings: tuple[str, ...] | None = None
+    allowed_issuers: tuple[str, ...] | None = None
+    include_inflation_linked: bool = True
+
+    @classmethod
+    def from_mapping(cls, values: dict | None) -> "UniverseFilters":
+        if values is None:
+            return cls()
+        if not isinstance(values, dict):
+            raise ValueError("universe_filters must be a JSON object.")
+        unknown = set(values) - {"allowed_ratings", "allowed_issuers", "include_inflation_linked"}
+        if unknown:
+            raise ValueError(f"Unknown universe filters: {sorted(unknown)}")
+
+        def normalise_list(name):
+            value = values.get(name)
+            if value is None:
+                return None
+            if not isinstance(value, (list, tuple, set)) or not value:
+                raise ValueError(f"{name} must be null or a non-empty list.")
+            result = tuple(sorted({str(item).strip() for item in value if str(item).strip()}))
+            if not result:
+                raise ValueError(f"{name} must contain at least one value.")
+            return result
+
+        include_ilb = values.get("include_inflation_linked", True)
+        if not isinstance(include_ilb, bool):
+            raise ValueError("include_inflation_linked must be boolean.")
+        return cls(normalise_list("allowed_ratings"), normalise_list("allowed_issuers"), include_ilb)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 def _finite(value) -> bool:
     try:
         return math.isfinite(float(value))

@@ -112,6 +112,12 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 .nav-item:hover { background: rgba(255,255,255,.06); color: var(--white); }
+.nav-item:focus-visible,
+.sub-tab:focus-visible,
+.panel-header.collapsible:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
 .nav-item.active {
   background: rgba(255,255,255,.08);
   color: var(--white);
@@ -483,6 +489,32 @@ table.data-table tfoot td {
 .alert-error   { background: var(--pale-red); border-color: var(--red); color: var(--red); }
 .alert-success { background: var(--pale-green); border-color: var(--green); color: var(--green); }
 
+.results-run-banner {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid rgba(22,124,128,.28);
+  border-left: 4px solid var(--teal);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(22,124,128,.09), var(--white));
+  color: var(--ink);
+  line-height: 1.5;
+}
+.results-run-banner-title {
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.results-run-banner-meta,
+.results-run-banner-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.results-run-banner-filters { margin-top: 3px; }
+
 /* Results empty state */
 .results-empty-state {
   min-height: 360px;
@@ -619,6 +651,7 @@ table.data-table tfoot td {
 }
 .sub-tab:hover { color: var(--ink); }
 .sub-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+.sub-tab[aria-selected="false"] { outline: none; }
 
 /* ──────────────────────────────────────────────
    Misc utilities

@@ -16,7 +16,7 @@ from core.inflation_stress_testing import (
     save_inflation_stress_results,
 )
 from core.pipeline import refresh_ldi_inputs
-from core.run_config import RunParameters
+from core.run_config import RunParameters, UniverseFilters
 
 
 def _report(progress, message):
@@ -65,15 +65,31 @@ def print_inflation_stress_results(stress_report):
     print("=" * 116)
 
 
-def main(audit=None, parameters: RunParameters | None = None, progress=None):
+def main(
+    audit=None,
+    parameters: RunParameters | None = None,
+    universe_filters: UniverseFilters | dict | None = None,
+    progress=None,
+):
     """Refresh inputs, solve the mandate, then replay and chart frozen stresses."""
     parameters = parameters or RunParameters()
     parameters.validate()
+    supplied_universe_filters = universe_filters is not None
+    universe_filters = (
+        universe_filters
+        if isinstance(universe_filters, UniverseFilters)
+        else UniverseFilters.from_mapping(universe_filters)
+    )
     if audit is not None:
         audit.record_configuration_data("run_parameters", parameters.to_dict())
-    refreshed = refresh_ldi_inputs(
-        audit=audit, parameters=parameters, progress=progress
-    )
+        if supplied_universe_filters:
+            audit.record_configuration_data(
+                "universe_filters", universe_filters.to_dict()
+            )
+    refresh_kwargs = {"audit": audit, "parameters": parameters, "progress": progress}
+    if supplied_universe_filters:
+        refresh_kwargs["universe_filters"] = universe_filters
+    refreshed = refresh_ldi_inputs(**refresh_kwargs)
     for stage in refreshed:
         print(f"Pipeline completed: {stage}")
     _report(progress, "Building the liability schedule")

@@ -185,12 +185,18 @@ def run(run_id: str, storage_dir: Path) -> int:
             if request_path.exists()
             else {}
         )
-        from core.run_config import RunParameters
+        from core.run_config import RunParameters, UniverseFilters
 
         parameters = RunParameters.from_mapping(request_payload.get("parameters"))
+        universe_filters = UniverseFilters.from_mapping(
+            request_payload.get("universe_filters")
+        )
 
         def configured_main(audit):
-            return main(audit=audit, parameters=parameters, progress=emit)
+            kwargs = {"audit": audit, "parameters": parameters, "progress": emit}
+            if "universe_filters" in request_payload:
+                kwargs["universe_filters"] = universe_filters
+            return main(**kwargs)
 
         with open(os.devnull, "w", encoding="utf-8") as sink:
             with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LDI Portfolio Manager</title>
   <meta name="description" content="Professional liability-driven investment portfolio configuration and analysis platform.">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v=ui-review-1">
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
@@ -22,17 +22,17 @@
     </div>
     <nav id="sidebar-nav">
       <div class="nav-label">Workflow</div>
-      <div class="nav-item active" data-tab="configuration" id="nav-configuration">
+      <div class="nav-item active" data-tab="configuration" id="nav-configuration" role="button" tabindex="0" aria-current="page">
         <span class="nav-icon">⚙</span> Configuration
       </div>
-      <div class="nav-item" data-tab="run" id="nav-run">
+      <div class="nav-item" data-tab="run" id="nav-run" role="button" tabindex="0" aria-current="false">
         <span class="nav-icon">▶</span> Run
       </div>
-      <div class="nav-item" data-tab="results" id="nav-results">
+      <div class="nav-item" data-tab="results" id="nav-results" role="button" tabindex="0" aria-current="false">
         <span class="nav-icon">📊</span> Results
       </div>
       <div class="nav-label" style="margin-top:8px">Analysis</div>
-      <div class="nav-item disabled" data-tab="stress" id="nav-stress">
+      <div class="nav-item disabled" data-tab="stress" id="nav-stress" role="button" tabindex="0" aria-current="false" aria-disabled="true">
         <span class="nav-icon">🌡</span> Inflation Shocks
       </div>
     </nav>
@@ -128,7 +128,7 @@
 
         <!-- Universe Filters -->
         <div class="panel">
-          <div class="panel-header collapsible" id="universe-header">
+          <div class="panel-header collapsible" id="universe-header" role="button" tabindex="0" aria-expanded="true" aria-controls="universe-body">
             <span class="panel-title">Universe Filters</span>
             <span class="collapse-icon">▼</span>
           </div>
@@ -138,7 +138,7 @@
                 <div class="form-group">
                   <label class="form-label flex items-center justify-between" style="display:flex; justify-content:space-between">
                     <span>Allowed Ratings</span>
-                    <a href="#" class="text-xs" id="btn-universe-ratings-toggle" style="font-weight:normal; font-size:10px">Toggle all</a>
+                    <a href="#" class="text-xs" id="btn-universe-ratings-toggle" style="font-weight:normal; font-size:10px">Clear all</a>
                   </label>
                   <div id="universe-ratings-box" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--white); display: flex; flex-direction: column; gap: 6px;">
                     <!-- Checkboxes injected by JS -->
@@ -148,7 +148,7 @@
                 <div class="form-group">
                   <label class="form-label flex items-center justify-between" style="display:flex; justify-content:space-between">
                     <span>Allowed Issuers</span>
-                    <a href="#" class="text-xs" id="btn-universe-issuers-toggle" style="font-weight:normal; font-size:10px">Toggle all</a>
+                    <a href="#" class="text-xs" id="btn-universe-issuers-toggle" style="font-weight:normal; font-size:10px">Clear all</a>
                   </label>
                   <div id="universe-issuers-box" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--white); display: flex; flex-direction: column; gap: 6px;">
                     <!-- Checkboxes injected by JS -->
@@ -160,7 +160,7 @@
                 <input type="checkbox" id="universe-include-ilb" checked>
                 <label class="form-label" for="universe-include-ilb">Include Inflation-Linked Bonds</label>
               </div>
-              <div class="form-hint" style="margin-top: 8px;">The canonical investable universe is shown read-only and is rebuilt by the existing pipeline on every run.</div>
+              <div class="form-hint" style="margin-top: 8px;">The canonical investable universe is rebuilt by the pipeline on every run. Your selections apply to the next run and are not persisted.</div>
             </div>
           </div>
         </div>
@@ -240,7 +240,7 @@
 
         <!-- Advanced: Inflation Stress Scenarios -->
         <div class="panel">
-          <div class="panel-header collapsible" id="advanced-header">
+          <div class="panel-header collapsible" id="advanced-header" role="button" tabindex="0" aria-expanded="false" aria-controls="advanced-body">
             <span class="panel-title">Advanced Options — Inflation Stress Scenarios</span>
             <span class="collapse-icon">▼</span>
           </div>
@@ -380,6 +380,7 @@
 
       <!-- ═══════ TAB: Results ═══════ -->
       <div class="tab-panel" id="tab-results">
+        <div id="results-load-error" class="alert alert-error hidden" role="alert"></div>
         <div id="results-empty-state" class="results-empty-state">
           <div class="results-empty-icon">📊</div>
           <h2>No results loaded</h2>
@@ -393,6 +394,7 @@
         </div>
 
         <div id="results-content" class="hidden">
+        <div id="results-run-banner" class="results-run-banner hidden" role="status"></div>
         <!-- KPI Bar — grouped into 3 categories -->
         <div class="kpi-bar" id="kpi-bar">
           <!-- Group 1: Portfolio -->
@@ -458,16 +460,16 @@
         <!-- Sub-tabs -->
         <div class="panel">
           <div class="sub-tabs">
-            <div class="sub-tab active" data-subtab="portfolio" id="stab-portfolio">Portfolio</div>
-            <div class="sub-tab" data-subtab="cashflows" id="stab-cashflows">Cash Flows</div>
-            <div class="sub-tab" data-subtab="annual" id="stab-annual">Annual Overview</div>
-            <div class="sub-tab" data-subtab="issuers" id="stab-issuers">Issuer Allocation</div>
-            <div class="sub-tab" data-subtab="coverage" id="stab-coverage">Coverage</div>
-            <div class="sub-tab" data-subtab="methodology" id="stab-methodology">Methodology</div>
+            <div class="sub-tab active" data-subtab="portfolio" id="stab-portfolio" role="tab" tabindex="0" aria-selected="true" aria-controls="subpanel-portfolio">Portfolio</div>
+            <div class="sub-tab" data-subtab="cashflows" id="stab-cashflows" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-cashflows">Cash Flows</div>
+            <div class="sub-tab" data-subtab="annual" id="stab-annual" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-annual">Annual Overview</div>
+            <div class="sub-tab" data-subtab="issuers" id="stab-issuers" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-issuers">Issuer Allocation</div>
+            <div class="sub-tab" data-subtab="coverage" id="stab-coverage" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-coverage">Coverage</div>
+            <div class="sub-tab" data-subtab="methodology" id="stab-methodology" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-methodology">Methodology</div>
           </div>
 
           <!-- Portfolio sub-tab -->
-          <div class="sub-panel" id="subpanel-portfolio">
+          <div class="sub-panel" id="subpanel-portfolio" role="tabpanel" aria-labelledby="stab-portfolio">
             <div class="panel-body">
               <div class="table-filter-bar">
                 <input class="table-search" type="text" id="portfolio-search" placeholder="Search ISIN or issuer…">
@@ -501,7 +503,7 @@
           </div>
 
           <!-- Cash flows sub-tab -->
-          <div class="sub-panel hidden" id="subpanel-cashflows">
+          <div class="sub-panel hidden" id="subpanel-cashflows" role="tabpanel" aria-labelledby="stab-cashflows">
             <div class="panel-body">
               <div class="chart-wrap mb-16" style="height:300px">
                 <canvas id="cf-monthly-chart"></canvas>
@@ -528,7 +530,7 @@
           </div>
 
           <!-- Annual sub-tab -->
-          <div class="sub-panel hidden" id="subpanel-annual">
+          <div class="sub-panel hidden" id="subpanel-annual" role="tabpanel" aria-labelledby="stab-annual">
             <div class="panel-body">
               <div class="chart-wrap mb-16" style="height:300px">
                 <canvas id="cf-annual-chart"></canvas>
@@ -553,7 +555,7 @@
           </div>
 
           <!-- Issuers sub-tab -->
-          <div class="sub-panel hidden" id="subpanel-issuers">
+          <div class="sub-panel hidden" id="subpanel-issuers" role="tabpanel" aria-labelledby="stab-issuers">
             <div class="panel-body">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
                 <div class="chart-wrap" style="height:300px">
@@ -577,7 +579,7 @@
           </div>
 
           <!-- Coverage sub-tab -->
-          <div class="sub-panel hidden" id="subpanel-coverage">
+          <div class="sub-panel hidden" id="subpanel-coverage" role="tabpanel" aria-labelledby="stab-coverage">
             <div class="panel-body">
               <div class="chart-wrap mb-16" style="height:300px">
                 <canvas id="coverage-chart"></canvas>
@@ -589,7 +591,7 @@
           </div>
 
           <!-- Methodology sub-tab -->
-          <div class="sub-panel hidden" id="subpanel-methodology">
+          <div class="sub-panel hidden" id="subpanel-methodology" role="tabpanel" aria-labelledby="stab-methodology">
             <div class="panel-body">
               <div class="methodology-intro" id="methodology-intro"></div>
               <div class="methodology-sections" id="methodology-sections"></div>
@@ -883,10 +885,10 @@
   </div>
 </div>
 
-<script src="/static/js/app.js?v=results-manual-load-2"></script>
-<script src="/static/js/config.js"></script>
-<script src="/static/js/run.js"></script>
-<script src="/static/js/results.js?v=results-manual-load-2"></script>
-<script src="/static/js/stress.js"></script>
+<script src="/static/js/app.js?v=ui-review-1"></script>
+<script src="/static/js/config.js?v=ui-review-1"></script>
+<script src="/static/js/run.js?v=ui-review-1"></script>
+<script src="/static/js/results.js?v=ui-review-1"></script>
+<script src="/static/js/stress.js?v=ui-review-1"></script>
 </body>
 </html>

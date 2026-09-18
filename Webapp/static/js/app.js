@@ -10,7 +10,9 @@ const TABS = ['configuration', 'run', 'results', 'stress'];
 function activateTab(name) {
   TABS.forEach(t => {
     document.querySelector(`#tab-${t}`)?.classList.toggle('active', t === name);
-    document.querySelector(`#nav-${t}`)?.classList.toggle('active', t === name);
+    const nav = document.querySelector(`#nav-${t}`);
+    nav?.classList.toggle('active', t === name);
+    nav?.setAttribute('aria-current', t === name ? 'page' : 'false');
   });
   const titles = {
     configuration: 'Configuration',
@@ -24,9 +26,16 @@ function activateTab(name) {
 }
 
 document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
+  const activate = () => {
     if (item.classList.contains('disabled')) return;
     activateTab(item.dataset.tab);
+  };
+  item.addEventListener('click', activate);
+  item.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      activate();
+    }
   });
 });
 
@@ -62,6 +71,17 @@ function enableResultsTab(resultsOk, stressOk) {
   // Results is always navigable. Loading archived results is an explicit user action.
   navResults.classList.remove('disabled');
   navStress.classList.toggle('disabled', !stressOk);
+  navStress.setAttribute('aria-disabled', stressOk ? 'false' : 'true');
+}
+
+async function refreshAvailability() {
+  try {
+    const availability = await apiFetch('/api/results/available');
+    enableResultsTab(availability.results_available, availability.stress_available);
+    return availability;
+  } catch (_) {
+    return null;
+  }
 }
 
 /* ──────────────────────────────────────────────
@@ -94,13 +114,24 @@ const fmt = {
    ────────────────────────────────────────────── */
 function initSubTabs() {
   document.querySelectorAll('.sub-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
+    const activate = () => {
       const group = tab.closest('.panel');
       group.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       const name = tab.dataset.subtab;
+      tab.setAttribute('aria-selected', 'true');
+      group.querySelectorAll('.sub-tab').forEach(t => {
+        if (t !== tab) t.setAttribute('aria-selected', 'false');
+      });
       group.querySelectorAll('.sub-panel').forEach(p => p.classList.add('hidden'));
       document.getElementById(`subpanel-${name}`)?.classList.remove('hidden');
+    };
+    tab.addEventListener('click', activate);
+    tab.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        activate();
+      }
     });
   });
 }
@@ -110,10 +141,18 @@ function initSubTabs() {
    ────────────────────────────────────────────── */
 function initCollapsibles() {
   document.querySelectorAll('.panel-header.collapsible').forEach(header => {
-    header.addEventListener('click', () => {
+    const toggle = () => {
       const body = header.nextElementSibling;
       const collapsed = header.classList.toggle('collapsed');
       body.classList.toggle('collapsed', collapsed);
+      header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    };
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
     });
   });
 }
@@ -199,10 +238,11 @@ const SCENARIO_COLORS = [
 document.addEventListener('DOMContentLoaded', () => {
   initSubTabs();
   initCollapsibles();
+  refreshAvailability();
 });
 
 // Expose globals for sub-modules
 window.App = {
-  apiFetch, fmt, updateRunStatus, enableResultsTab,
+  apiFetch, fmt, updateRunStatus, enableResultsTab, refreshAvailability,
   CHART_COLORS, SCENARIO_COLORS, initSortableTable, initTableSearch,
 };

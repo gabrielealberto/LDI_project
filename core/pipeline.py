@@ -69,7 +69,7 @@ def _report(progress, message):
         progress(message)
 
 
-def refresh_ldi_inputs(audit=None, parameters=None, progress=None):
+def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progress=None):
     """Download fresh market data and rebuild every derived LDI input."""
     from .run_config import RunParameters
 
@@ -194,10 +194,13 @@ def refresh_ldi_inputs(audit=None, parameters=None, progress=None):
     completed.append("inflation baseline")
 
     _report(progress, "Generating contractual bond cash flows")
+    cashflow_kwargs = {}
+    if universe_filters is not None:
+        cashflow_kwargs["universe_filters"] = universe_filters
     if custom_parameters:
-        build_cashflow_outputs(nominal=parameters.nominal)
+        build_cashflow_outputs(nominal=parameters.nominal, **cashflow_kwargs)
     else:
-        build_cashflow_outputs()
+        build_cashflow_outputs(**cashflow_kwargs)
     _require_outputs(
         [CASHFLOWS_PATH, BOND_CASHFLOW_MATRIX_PATH],
         "bond cash-flow generation",

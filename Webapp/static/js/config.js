@@ -665,6 +665,10 @@ async function loadUniverseFilters() {
         cb.checked = true;
         cb.disabled = data.editable === false;
         cb.className = 'filter-rating-cb';
+        cb.addEventListener('change', () => {
+          updateUniverseToggleLabels();
+          document.dispatchEvent(new CustomEvent('universeFiltersChanged'));
+        });
         lbl.appendChild(cb);
         lbl.appendChild(document.createTextNode(r));
         rb.appendChild(lbl);
@@ -682,12 +686,16 @@ async function loadUniverseFilters() {
         lbl.style.cursor = 'pointer';
         const cb = document.createElement('input');
         cb.type = 'checkbox';
-        cb.value = i;
+        cb.value = i.code;
         cb.checked = true;
         cb.disabled = data.editable === false;
         cb.className = 'filter-issuer-cb';
+        cb.addEventListener('change', () => {
+          updateUniverseToggleLabels();
+          document.dispatchEvent(new CustomEvent('universeFiltersChanged'));
+        });
         lbl.appendChild(cb);
-        lbl.appendChild(document.createTextNode(i));
+        lbl.appendChild(document.createTextNode(i.label));
         ib.appendChild(lbl);
       });
     }
@@ -698,7 +706,35 @@ async function loadUniverseFilters() {
     const ib = document.getElementById('universe-issuers-box');
     if (ib) ib.innerHTML = '<span class="text-xs" style="color:var(--red)">Error loading data</span>';
   }
+  updateUniverseToggleLabels();
+  document.dispatchEvent(new CustomEvent('universeFiltersChanged'));
 }
+
+function collectUniverseFilters() {
+  const selectedRatings = [...document.querySelectorAll('.filter-rating-cb:checked')]
+    .map(cb => cb.value);
+  const selectedIssuers = [...document.querySelectorAll('.filter-issuer-cb:checked')]
+    .map(cb => cb.value);
+  return {
+    allowed_ratings: selectedRatings,
+    allowed_issuers: selectedIssuers,
+    include_inflation_linked: document.getElementById('universe-include-ilb')?.checked ?? true,
+  };
+}
+
+function updateUniverseToggleLabels() {
+  [
+    ['.filter-rating-cb', 'btn-universe-ratings-toggle'],
+    ['.filter-issuer-cb', 'btn-universe-issuers-toggle'],
+  ].forEach(([selector, id]) => {
+    const boxes = [...document.querySelectorAll(selector)];
+    const button = document.getElementById(id);
+    if (!button || !boxes.length) return;
+    button.textContent = boxes.every(cb => cb.checked) ? 'Clear all' : 'Select all';
+  });
+}
+
+window.collectUniverseFilters = collectUniverseFilters;
 
 document.getElementById('btn-universe-ratings-toggle')?.addEventListener('click', e => {
   e.preventDefault();
@@ -706,6 +742,7 @@ document.getElementById('btn-universe-ratings-toggle')?.addEventListener('click'
   if (Array.from(cbs).some(cb => cb.disabled)) return;
   const anyChecked = Array.from(cbs).some(cb => cb.checked);
   cbs.forEach(cb => cb.checked = !anyChecked);
+  updateUniverseToggleLabels();
 });
 
 document.getElementById('btn-universe-issuers-toggle')?.addEventListener('click', e => {
@@ -714,6 +751,7 @@ document.getElementById('btn-universe-issuers-toggle')?.addEventListener('click'
   if (Array.from(cbs).some(cb => cb.disabled)) return;
   const anyChecked = Array.from(cbs).some(cb => cb.checked);
   cbs.forEach(cb => cb.checked = !anyChecked);
+  updateUniverseToggleLabels();
 });
 
 /* ──────────────────────────────────────────────

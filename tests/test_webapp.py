@@ -48,10 +48,24 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(invalid.status_code, 400)
 
-    def test_universe_filters_remain_read_only(self):
+    def test_universe_filters_are_available_for_runs(self):
         response = self.client.get("/api/config/universe")
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.get_json()["editable"])
+        payload = response.get_json()
+        self.assertTrue(payload["editable"])
+        self.assertIn("BBB-", payload["ratings"])
+        self.assertLess(payload["ratings"].index("BBB-"), len(payload["ratings"]))
+        self.assertIn({"code": "GOV_RO", "label": "Romania"}, payload["issuers"])
+        self.assertEqual(
+            payload["ratings"],
+            sorted(payload["ratings"], key=lambda r: (
+                ("AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-").index(r)
+            )),
+        )
+        self.assertEqual(
+            [item["label"] for item in payload["issuers"]],
+            sorted((item["label"] for item in payload["issuers"]), key=str.casefold),
+        )
 
     def test_methodology_is_generic_and_available_without_a_run(self):
         response = self.client.get("/api/results/methodology")

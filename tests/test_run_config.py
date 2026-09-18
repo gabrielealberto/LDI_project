@@ -1,6 +1,6 @@
 import unittest
 
-from core.run_config import RunParameters
+from core.run_config import RunParameters, UniverseFilters
 
 
 class RunParameterTests(unittest.TestCase):
@@ -34,6 +34,32 @@ class RunParameterTests(unittest.TestCase):
         self.assertEqual(baseline.convergence_half_life_months, 12)
         self.assertEqual(baseline.spread_half_life_months, 24)
         self.assertEqual(baseline.seasonal_years, 8)
+
+
+class UniverseFilterTests(unittest.TestCase):
+    def test_normalises_and_deduplicates_filter_values(self):
+        filters = UniverseFilters.from_mapping(
+            {
+                "allowed_ratings": [" BBB-", "BBB-", "AAA"],
+                "allowed_issuers": [" GOV_RO", "GOV_RO"],
+                "include_inflation_linked": False,
+            }
+        )
+
+        self.assertEqual(filters.allowed_ratings, ("AAA", "BBB-"))
+        self.assertEqual(filters.allowed_issuers, ("GOV_RO",))
+        self.assertFalse(filters.include_inflation_linked)
+
+    def test_rejects_empty_unknown_and_non_boolean_values(self):
+        invalid = (
+            {"allowed_ratings": []},
+            {"allowed_issuers": ["", "  "]},
+            {"unexpected": []},
+            {"include_inflation_linked": "false"},
+        )
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                UniverseFilters.from_mapping(values)
 
 
 if __name__ == "__main__":

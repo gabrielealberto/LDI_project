@@ -40,9 +40,17 @@ async function runPreflightChecks() {
         </div>
       `;
     }).join('');
-    document.getElementById('btn-run').disabled = !allGood;
+    const selectedFilters = window.collectUniverseFilters?.();
+    const filtersValid = !selectedFilters ||
+      (selectedFilters.allowed_ratings.length > 0 && selectedFilters.allowed_issuers.length > 0);
+    document.getElementById('btn-run').disabled = !allGood || !filtersValid;
     if (!allGood) {
-      showRunError('Some required inputs are missing. Configure at least one liability before running.');
+      const failed = Object.entries(checks)
+        .filter(([key, ok]) => !ok && blockers.includes(key))
+        .map(([key]) => labels[key] || key);
+      showRunError(`Cannot run until these checks pass: ${failed.join(', ')}.`);
+    } else if (!filtersValid) {
+      showRunError('Select at least one rating and one issuer before running.');
     } else {
       hideRunError();
     }
@@ -59,6 +67,11 @@ async function runPreflightChecks() {
    ────────────────────────────────────────────── */
 document.getElementById('btn-run')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-run');
+  const universeFilters = window.collectUniverseFilters ? window.collectUniverseFilters() : null;
+  if (universeFilters && (!universeFilters.allowed_ratings.length || !universeFilters.allowed_issuers.length)) {
+    showRunError('Select at least one rating and one issuer before running.');
+    return;
+  }
   btn.disabled = true;
   clearLog();
   hideRunError();
@@ -69,6 +82,7 @@ document.getElementById('btn-run')?.addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({
         parameters: window.collectRunParameters ? window.collectRunParameters() : undefined,
+        universe_filters: universeFilters || undefined,
       }),
     });
     _currentRunId = resp.run_id;
@@ -110,6 +124,7 @@ async function pollStatus(runId) {
       App.updateRunStatus('success');
       App.enableResultsTab(true, true);
       appendLog('Results and stress analysis are now available.', 'ok');
+      document.dispatchEvent(new CustomEvent('runCompleted'));
     } else if (status.status === 'error') {
       clearInterval(_pollInterval);
       _pollInterval = null;
@@ -176,7 +191,8 @@ function appendLog(msg, cls = '') {
 }
 
 function clearLog() {
-  document.getElementById('run-log').innerHTML = '';
+  document.getElementById('run-log').innerHTML =
+    '<div class="log-placeholder" id="log-placeholder">Pipeline not started — press <strong>▶ Run Full Pipeline</strong> to begin.</div>';
 }
 
 document.getElementById('btn-clear-log')?.addEventListener('click', clearLog);
@@ -193,6 +209,12 @@ function escHtml(str) {
    ────────────────────────────────────────────── */
 document.addEventListener('tabActivated', e => {
   if (e.detail === 'run') {
+    runPreflightChecks();
+  }
+});
+
+document.addEventListener('universeFiltersChanged', () => {
+  if (document.getElementById('tab-run')?.classList.contains('active')) {
     runPreflightChecks();
   }
 });

@@ -77,6 +77,48 @@ def _load_frame(name: str):
         return None, (jsonify({"error": f"Invalid result artifact: {exc}"}), 500)
 
 
+def _latest_run_metadata(record: dict) -> dict:
+    """Return safe, user-facing metadata for the explicitly loaded run."""
+    repository = _repository()
+    request_payload = {}
+    request_path = repository.run_dir(record["run_id"]) / "request.json"
+    if request_path.exists():
+        try:
+            request_payload = json.loads(request_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            request_payload = {}
+
+    summary = {}
+    summary_path = repository.artifact(record["run_id"], "summary.json")
+    if summary_path.exists():
+        try:
+            stored = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary = {
+                key: stored.get(key)
+                for key in (
+                    "eligible_bonds",
+                    "positions",
+                    "total_investment_eur",
+                    "annualized_return",
+                    "solver_mip_gap",
+                )
+                if key in stored
+            }
+        except (OSError, ValueError):
+            summary = {}
+
+    return {
+        "run_id": record["run_id"],
+        "pipeline_run_id": record.get("pipeline_run_id"),
+        "created_at": record.get("created_at"),
+        "started_at": record.get("started_at"),
+        "completed_at": record.get("completed_at"),
+        "parameters": request_payload.get("parameters", {}),
+        "universe_filters": request_payload.get("universe_filters", {}),
+        "summary": summary,
+    }
+
+
 @bp.get("/available")
 def available():
     record = _repository().latest("success")
@@ -86,6 +128,7 @@ def available():
                 "results_available": False,
                 "stress_available": False,
                 "excel_available": False,
+                "latest_run": None,
             }
         )
     run_id = record["run_id"]
@@ -101,6 +144,7 @@ def available():
             "excel_available": _repository()
             .artifact(run_id, "ldi_optimization.xlsx")
             .exists(),
+            "latest_run": _latest_run_metadata(record),
         }
     )
 

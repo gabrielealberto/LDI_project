@@ -8,35 +8,92 @@ let _issuerChart     = null;
 let _coverageChart   = null;
 let _surplusChart    = null;
 
+function formatRunTimestamp(value) {
+  if (!value) return 'unknown time';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function renderRunBanner(run) {
+  const banner = document.getElementById('results-run-banner');
+  if (!banner || !run) return;
+  const summary = run.summary || {};
+  const parameters = run.parameters || {};
+  const filters = run.universe_filters || {};
+  const ratingText = filters.allowed_ratings?.length
+    ? filters.allowed_ratings.join(', ')
+    : 'all cleaned ratings';
+  const issuerText = filters.allowed_issuers?.length
+    ? `${filters.allowed_issuers.length} selected issuer(s)`
+    : 'all cleaned issuers';
+  const metrics = [];
+  if (summary.eligible_bonds != null) metrics.push(`${summary.eligible_bonds} eligible bonds`);
+  if (summary.positions != null) metrics.push(`${summary.positions} positions`);
+  if (summary.total_investment_eur != null) {
+    metrics.push(`investment EUR ${App.fmt.eur0(summary.total_investment_eur)}`);
+  }
+  if (parameters.max_positions != null) metrics.push(`max positions ${parameters.max_positions}`);
+  banner.innerHTML = `
+    <div class="results-run-banner-title">Run info</div>
+    <div class="results-run-banner-meta">
+      <span><strong>Completed:</strong> ${formatRunTimestamp(run.completed_at)}</span>
+      <span><strong>Run:</strong> ${esc(run.pipeline_run_id || run.run_id || 'unknown')}</span>
+      ${metrics.map(item => `<span>${esc(item)}</span>`).join('')}
+    </div>
+    <div class="results-run-banner-filters">
+      <strong>Universe:</strong> ratings ${esc(ratingText)}; ${esc(issuerText)};
+      inflation-linked ${filters.include_inflation_linked === false ? 'excluded' : 'included'}.
+    </div>`;
+  banner.classList.remove('hidden');
+}
+
 /* ──────────────────────────────────────────────
    Load all results
    ────────────────────────────────────────────── */
 async function loadResults() {
   const emptyState = document.getElementById('results-empty-state');
   const content = document.getElementById('results-content');
+  const errorBox = document.getElementById('results-load-error');
+  const showError = message => {
+    if (errorBox) {
+      errorBox.textContent = message;
+      errorBox.classList.remove('hidden');
+    }
+  };
+  if (errorBox) errorBox.classList.add('hidden');
   try {
     const avail = await App.apiFetch('/api/results/available');
+    App.enableResultsTab(avail.results_available, avail.stress_available);
     if (!avail.results_available) {
       emptyState.querySelector('h2').textContent = 'No completed run available';
       emptyState.querySelector('p').textContent =
         'Run the pipeline first. Once it has completed successfully, click this button to load its results.';
+      emptyState.classList.remove('hidden');
       content.classList.add('hidden');
       return;
     }
     emptyState.classList.add('hidden');
     content.classList.remove('hidden');
-  } catch (_) {
+    renderRunBanner(avail.latest_run);
+  } catch (e) {
+    showError(`Unable to check available results: ${e.message}`);
     return;
   }
 
-  await Promise.all([
-    loadSummaryKPIs(),
-    loadPortfolioTable(),
-    loadCashflowsMonthly(),
-    loadCashflowsAnnual(),
-    loadIssuerAllocation(),
-    loadMethodology(),
-  ]);
+  try {
+    await Promise.all([
+      loadSummaryKPIs(),
+      loadPortfolioTable(),
+      loadCashflowsMonthly(),
+      loadCashflowsAnnual(),
+      loadIssuerAllocation(),
+      loadMethodology(),
+    ]);
+  } catch (e) {
+    showError(`Unable to load results: ${e.message}`);
+    return;
+  }
 
   App.initSortableTable('portfolio-table');
   App.initTableSearch('portfolio-search', 'portfolio-tbody');
@@ -438,6 +495,7 @@ const ISSUER_FLAGS = {
   'malta': 'mt',
   'unione europea': 'eu',
   'european union': 'eu',
+  'european financial stability facility': 'eu',
   'eu': 'eu',
   'europa': 'eu',
   'romania': 'ro',
@@ -476,3 +534,9 @@ if (loadLatestResultsButton) {
     }
   });
 }
+
+// A newly completed run is trusted and may populate Results automatically.
+// Initial page load intentionally does not emit this event.
+document.addEventListener('runCompleted', () => {
+  loadResults();
+});

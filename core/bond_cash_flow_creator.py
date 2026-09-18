@@ -5,6 +5,8 @@ import pandas as pd
 
 from .inflation_linked_bonds import load_inflation_linked_bond_types
 from .inflation_linked_cashflows import build_inflation_linked_cashflows
+from .run_config import UniverseFilters
+from scripts.cleaners.bond_cleaner import apply_universe_filters
 from .utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
@@ -261,17 +263,53 @@ def monthly_cashflow_matrix(cashflows):
     )
 
 
-def build_cashflow_outputs(nominal=NOMINAL):
+def build_cashflow_outputs(nominal=NOMINAL, universe_filters=None):
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
-    all_bonds = merge_clean_bonds(fd_clean, bi_clean)
+    all_bonds_before_filters = merge_clean_bonds(fd_clean, bi_clean)
     overrides = load_cashflow_overrides()
     override_isins = set(overrides["isincode"])
-    missing_override_bonds = override_isins - set(all_bonds["isincode"])
+    missing_override_bonds = override_isins - set(all_bonds_before_filters["isincode"])
     if missing_override_bonds:
         raise ValueError(
             f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}"
         )
+
+    filters = (
+        universe_filters
+        if isinstance(universe_filters, UniverseFilters)
+        else UniverseFilters.from_mapping(universe_filters)
+    )
+    fd_filtered, bi_filtered = apply_universe_filters(
+        fd_clean,
+        bi_clean,
+        allowed_ratings=filters.allowed_ratings,
+        allowed_issuers=filters.allowed_issuers,
+    )
+    configured_inflation_linked_isins = set(load_inflation_linked_bond_types())
+    if filters.include_inflation_linked:
+        # Inflation-linked instruments remain controlled by their dedicated
+        # include/exclude switch rather than disappearing because of a market
+        # rating or issuer selection intended for nominal bonds.
+        ilb_fd = fd_clean.loc[
+            fd_clean["isincode"].isin(configured_inflation_linked_isins)
+        ]
+        ilb_bi = bi_clean.loc[
+            bi_clean["isincode"].isin(configured_inflation_linked_isins)
+        ]
+        fd_filtered = (
+            pd.concat([fd_filtered, ilb_fd], ignore_index=True)
+            .drop_duplicates("isincode")
+            .reset_index(drop=True)
+        )
+        bi_filtered = (
+            pd.concat([bi_filtered, ilb_bi], ignore_index=True)
+            .drop_duplicates("isincode")
+            .reset_index(drop=True)
+        )
+    all_bonds = merge_clean_bonds(fd_filtered, bi_filtered)
+    if all_bonds.empty:
+        raise ValueError("Universe filters leave no eligible bonds.")
 
     bonds, comparison = validated_bonds(all_bonds, nominal=nominal)
     # These structured bonds are validated against their explicit schedules,
@@ -282,7 +320,9 @@ def build_cashflow_outputs(nominal=NOMINAL):
         .drop_duplicates("isincode")
         .reset_index(drop=True)
     )
-    inflation_linked_isins = set(load_inflation_linked_bond_types())
+    inflation_linked_isins = (
+        configured_inflation_linked_isins if filters.include_inflation_linked else set()
+    )
     inflation_linked_bonds = all_bonds.loc[
         all_bonds["isincode"].isin(inflation_linked_isins)
     ].reset_index(drop=True)
@@ -317,4 +357,10 @@ def build_cashflow_outputs(nominal=NOMINAL):
         "cashflows": cashflows,
         "matrix": matrix,
         "inflation_linked_bonds": sorted(inflation_linked_isins),
+        "universe_filters": filters.to_dict(),
+        "universe_counts": {
+            "cleaned_before_filters": len(all_bonds_before_filters),
+            "after_filters": len(all_bonds),
+            "cashflow_bonds": len(bonds),
+        },
     }
