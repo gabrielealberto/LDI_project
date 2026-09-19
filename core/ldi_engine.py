@@ -98,10 +98,14 @@ def load_bond_inputs(
     cashflows_path=BOND_CASHFLOWS_PATH,
     bonds_path=BONDS_PATH,
     coupon_tax_rate=COUPON_TAX_RATE,
+    detailed_cashflows=None,
 ):
     """Load the coupon-tax-adjusted matrix and output metadata."""
     matrix = after_tax_cashflow_matrix(
-        pd.read_parquet(cashflows_path), coupon_tax_rate=coupon_tax_rate
+        detailed_cashflows
+        if detailed_cashflows is not None
+        else pd.read_parquet(cashflows_path),
+        coupon_tax_rate=coupon_tax_rate,
     )
     bonds = pd.read_parquet(bonds_path)
     return matrix, bonds
@@ -175,16 +179,8 @@ def _explain_selected_bonds(
             reasons.append("Required for the terminal capital buffer")
             constraints.append("terminal capital buffer")
             continue
-        if lots > 1:
-            reasons.append(
-                "Cost-optimal feasible position; no single binding constraint"
-            )
-            constraints.append("cost objective / feasibility")
-        else:
-            reasons.append(
-                "Cost-optimal feasible position; no single binding constraint"
-            )
-            constraints.append("cost objective / feasibility")
+        reasons.append("Cost-optimal feasible position; no single binding constraint")
+        constraints.append("cost objective / feasibility")
     explanations = pd.DataFrame(
         {
             "isincode": portfolio["isincode"].astype(str).to_numpy(),
@@ -396,12 +392,17 @@ def optimize_cashflow_matching(
     # A coupon received before a liability can finance it.  Therefore coverage
     # is assessed on the cumulative cash balance, not month by month.
     # q = integer lots in a commission region; y = active region; s = external cash.
-    cumulative = np.tril(np.ones((n_months, n_months)))
+    lower_rows = np.repeat(np.arange(n_months), np.arange(1, n_months + 1))
+    lower_cols = np.concatenate([np.arange(row + 1) for row in range(n_months)])
+    cumulative = csr_matrix(
+        (np.ones(len(lower_rows)), (lower_rows, lower_cols)),
+        shape=(n_months, n_months),
+    )
     coverage_matrix = hstack(
         [
             csr_matrix(cumulative @ cashflows[:, segment_bonds]),
             csr_matrix((n_months, n_segments)),
-            csr_matrix(cumulative),
+            cumulative,
         ],
         format="csr",
     )

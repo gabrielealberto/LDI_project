@@ -95,8 +95,11 @@ def main(
     _report(progress, "Building the liability schedule")
     dates, cashflows = baseline_cashflows()
     _report(progress, "Loading validated bond cash flows")
-    matrix, bonds = load_bond_inputs(coupon_tax_rate=parameters.coupon_tax_rate)
     detailed_cashflows = pd.read_parquet(BOND_CASHFLOWS_PATH)
+    matrix, bonds = load_bond_inputs(
+        coupon_tax_rate=parameters.coupon_tax_rate,
+        detailed_cashflows=detailed_cashflows,
+    )
     _report(progress, "Solving the cash-flow matching portfolio")
     result = optimize_cashflow_matching(
         pd.DataFrame({"date": dates, "cashflow": cashflows}),

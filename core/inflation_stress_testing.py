@@ -67,6 +67,8 @@ def _frozen_asset_cashflows(
     base_cashflows_path: Path,
     nominal: float,
     coupon_tax_rate: float,
+    baseline_cashflows: pd.DataFrame | None = None,
+    indexed_isins: set[str] | None = None,
 ) -> pd.Series:
     """Replace only indexed positions with scenario-consistent contractual flows."""
     if portfolio.empty:
@@ -98,9 +100,17 @@ def _frozen_asset_cashflows(
             f"Frozen portfolio ISINs absent from bond metadata: {missing_market}"
         )
 
-    indexed_isins = set(load_inflation_linked_bond_types())
+    indexed_isins = (
+        set(load_inflation_linked_bond_types())
+        if indexed_isins is None
+        else indexed_isins
+    )
     selected_indexed = selected.loc[selected["isincode"].isin(indexed_isins)]
-    baseline_cashflows = pd.read_parquet(base_cashflows_path)
+    baseline_cashflows = (
+        baseline_cashflows
+        if baseline_cashflows is not None
+        else pd.read_parquet(base_cashflows_path)
+    )
     baseline_cashflows["isincode"] = baseline_cashflows["isincode"].astype(str)
     nominal_cashflows = baseline_cashflows.loc[
         baseline_cashflows["isincode"].isin(set(frozen_lots.index) - indexed_isins)
@@ -199,8 +209,14 @@ def run_inflation_stress_test(
     """Replay one solved portfolio under baseline plus each configured stress."""
     if "portfolio" not in result:
         raise ValueError("Optimization result must contain a portfolio.")
-    baseline = pd.read_parquet(baseline_path)
-    history = load_history(foi_path=foi_path, hicp_path=hicp_path)
+    from .inflation_stress import _validate_path
+
+    baseline = _validate_path(pd.read_parquet(baseline_path), "Inflation baseline")
+    history = _validate_path(
+        load_history(foi_path=foi_path, hicp_path=hicp_path), "Inflation history"
+    )
+    detailed_cashflows = pd.read_parquet(base_cashflows_path)
+    indexed_isins = set(load_inflation_linked_bond_types())
     stresses = scenarios if scenarios is not None else load_inflation_stresses()
     base_start = pd.to_datetime(baseline["date"]).min()
     baseline_scenario = InflationShock("baseline", base_start)
@@ -212,7 +228,12 @@ def run_inflation_stress_test(
     fingerprint = baseline_fingerprint(baseline)
     for scenario in all_scenarios:
         provider, stressed_baseline = build_stressed_index_provider(
-            baseline, history, scenario, foi_path=foi_path, hicp_path=hicp_path
+            baseline,
+            history,
+            scenario,
+            foi_path=foi_path,
+            hicp_path=hicp_path,
+            validate_inputs=False,
         )
         dates, liabilities = cashflows_for_provider(provider)
         asset = _frozen_asset_cashflows(
@@ -222,6 +243,8 @@ def run_inflation_stress_test(
             Path(base_cashflows_path),
             nominal,
             coupon_tax_rate,
+            baseline_cashflows=detailed_cashflows,
+            indexed_isins=indexed_isins,
         )
         monthly = replay_frozen_cashflows(asset, dates, liabilities)
         monthly.insert(0, "scenario_id", scenario.scenario_id)

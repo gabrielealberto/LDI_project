@@ -28,6 +28,7 @@ class BaselineIndexProvider:
 
     def __init__(self, levels: dict[str, pd.Series]):
         self.levels = levels
+        self._reference_cache: dict[tuple[str, pd.Timestamp, int], float] = {}
 
     def monthly_level(self, index_id: str, date: pd.Timestamp) -> float:
         if index_id not in self.levels:
@@ -52,12 +53,17 @@ class BaselineIndexProvider:
         month and linearly interpolate towards the following monthly observation.
         """
         date = pd.Timestamp(date).normalize()
+        key = (index_id, date, int(lag_months))
+        if key in self._reference_cache:
+            return self._reference_cache[key]
         first = date.replace(day=1) - pd.DateOffset(months=lag_months)
         next_month = first + pd.offsets.MonthBegin(1)
         start = self.monthly_level(index_id, first)
         end = self.monthly_level(index_id, next_month)
         fraction = (date.day - 1) / date.days_in_month
-        return start + fraction * (end - start)
+        value = start + fraction * (end - start)
+        self._reference_cache[key] = value
+        return value
 
 
 def _read_levels(path: Path, column: str) -> pd.Series:
@@ -77,6 +83,8 @@ def build_index_provider(
     baseline: pd.DataFrame,
     foi_path: Path = FOI_PATH,
     hicp_path: Path = HICP_PATH,
+    history: pd.DataFrame | None = None,
+    validate_inputs: bool = True,
 ) -> BaselineIndexProvider:
     """Build an index provider from history and a validated forecast path."""
     required = {"date", *INDEX_COLUMNS.values()}
@@ -85,17 +93,45 @@ def build_index_provider(
         raise ValueError(f"Inflation baseline is missing columns: {sorted(missing)}")
     baseline = baseline[["date", *INDEX_COLUMNS.values()]].copy()
     baseline["date"] = pd.to_datetime(baseline["date"])
-    if (
+    if validate_inputs and (
         baseline.empty
         or baseline["date"].duplicated().any()
         or not baseline["date"].dt.is_month_start.all()
     ):
         raise ValueError("Inflation baseline does not have unique month-start dates.")
 
-    history = {
-        "FOI_XT_IT": _read_levels(foi_path, "foi_xt_it"),
-        "HICP_XT_EA": _read_levels(hicp_path, "hicp_xt_ea"),
-    }
+    if history is None:
+        history_levels = {
+            "FOI_XT_IT": _read_levels(foi_path, "foi_xt_it"),
+            "HICP_XT_EA": _read_levels(hicp_path, "hicp_xt_ea"),
+        }
+    else:
+        history_frame = history[["date", *INDEX_COLUMNS.values()]].copy()
+        history_frame["date"] = pd.to_datetime(history_frame["date"])
+        if validate_inputs and (
+            history_frame.empty
+            or history_frame["date"].isna().any()
+            or history_frame["date"].duplicated().any()
+            or not history_frame["date"].dt.is_month_start.all()
+        ):
+            raise ValueError("Inflation history has invalid monthly dates.")
+        values = history_frame[list(INDEX_COLUMNS.values())].apply(
+            pd.to_numeric, errors="coerce"
+        )
+        if validate_inputs and (
+            values.isna().any().any()
+            or not np.isfinite(values.to_numpy()).all()
+            or not (values > 0).all().all()
+        ):
+            raise ValueError("Inflation history has invalid index levels.")
+        history_levels = {
+            index_id: pd.Series(
+                pd.to_numeric(history_frame[column], errors="coerce").to_numpy(float),
+                index=history_frame["date"],
+                name=column,
+            ).sort_index()
+            for index_id, column in INDEX_COLUMNS.items()
+        }
     levels = {}
     for index_id, column in INDEX_COLUMNS.items():
         forecast = pd.Series(
@@ -103,14 +139,14 @@ def build_index_provider(
             index=baseline["date"],
             name=column,
         ).sort_index()
-        if forecast.isna().any() or not (forecast > 0).all():
+        if validate_inputs and (forecast.isna().any() or not (forecast > 0).all()):
             raise ValueError(f"Inflation baseline has invalid {index_id} levels.")
-        overlap = history[index_id].index.intersection(forecast.index)
+        overlap = history_levels[index_id].index.intersection(forecast.index)
         if len(overlap):
             raise ValueError(
                 f"History and baseline overlap for {index_id}: {overlap[0]:%Y-%m}."
             )
-        combined = pd.concat([history[index_id], forecast]).sort_index()
+        combined = pd.concat([history_levels[index_id], forecast]).sort_index()
         expected = pd.date_range(combined.index.min(), combined.index.max(), freq="MS")
         if not combined.index.equals(expected):
             raise ValueError(

@@ -514,7 +514,6 @@ table.data-table tfoot td {
   font-size: 11.5px;
 }
 .results-run-banner-filters { margin-top: 3px; }
-
 /* Results empty state */
 .results-empty-state {
   min-height: 360px;
@@ -931,6 +930,9 @@ table.data-table tfoot td {
   }
   .panel-body { padding: 12px; }
   .panel-header > .flex { flex-wrap: wrap; }
+  .results-run-banner { padding: 10px 12px; }
+  .results-run-banner-meta,
+  .results-run-banner-filters { gap: 5px 10px; }
 
   .btn {
     min-height: 40px;

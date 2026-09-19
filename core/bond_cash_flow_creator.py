@@ -161,15 +161,19 @@ def gross_ytm(cashflows):
         else:
             low = mid
             npv_low = npv_mid
+        if high - low <= 1e-14:
+            break
 
     return (low + high) / 2
 
 
-def compare_gross_ytm(bonds, nominal=NOMINAL, tolerance=0.02):
+def _compare_gross_ytm_with_cashflows(bonds, nominal=NOMINAL, tolerance=0.02):
     rows = []
+    cashflow_parts = []
     for row in bonds.itertuples(index=False):
         bond = row._asdict()
         cashflows = create_cashflows(bond, nominal=nominal)
+        cashflow_parts.append(cashflows)
         ytm = gross_ytm(cashflows)
         source = round(bond["grossytm"], 2)
         calculated = round(ytm * 100, 2)
@@ -184,13 +188,35 @@ def compare_gross_ytm(bonds, nominal=NOMINAL, tolerance=0.02):
             }
         )
 
-    return pd.DataFrame(rows)
+    comparison = pd.DataFrame(rows)
+    if cashflow_parts:
+        cashflows = pd.concat(cashflow_parts, ignore_index=True)
+    else:
+        cashflows = pd.DataFrame(columns=["isincode", "date", "l1", "l2", "l3"])
+    return comparison, cashflows
+
+
+def compare_gross_ytm(bonds, nominal=NOMINAL, tolerance=0.02):
+    comparison, _ = _compare_gross_ytm_with_cashflows(
+        bonds, nominal=nominal, tolerance=tolerance
+    )
+    return comparison
 
 
 def validated_bonds(bonds, nominal=NOMINAL):
     comparison = compare_gross_ytm(bonds, nominal=nominal)
     valid_isin = comparison.loc[comparison["is_equal"], "isincode"]
     return bonds[bonds["isincode"].isin(valid_isin)].reset_index(drop=True), comparison
+
+
+def _validated_bonds_with_cashflows(bonds, nominal=NOMINAL):
+    """Validate bonds once and return the generic flows for reuse downstream."""
+    comparison, cashflows = _compare_gross_ytm_with_cashflows(
+        bonds, nominal=nominal
+    )
+    valid_isin = comparison.loc[comparison["is_equal"], "isincode"]
+    validated = bonds[bonds["isincode"].isin(valid_isin)].reset_index(drop=True)
+    return validated, comparison, cashflows
 
 
 def load_cashflow_overrides(
@@ -266,10 +292,10 @@ def monthly_cashflow_matrix(cashflows):
 def build_cashflow_outputs(nominal=NOMINAL, universe_filters=None):
     """Generate and persist the validated detailed and monthly bond cash flows."""
     fd_clean, bi_clean = load_clean_bonds()
-    all_bonds_before_filters = merge_clean_bonds(fd_clean, bi_clean)
     overrides = load_cashflow_overrides()
     override_isins = set(overrides["isincode"])
-    missing_override_bonds = override_isins - set(all_bonds_before_filters["isincode"])
+    cleaned_isins = set(fd_clean["isincode"])
+    missing_override_bonds = override_isins - cleaned_isins
     if missing_override_bonds:
         raise ValueError(
             f"Override ISINs are absent from the clean bond universe: {sorted(missing_override_bonds)}"
@@ -311,7 +337,9 @@ def build_cashflow_outputs(nominal=NOMINAL, universe_filters=None):
     if all_bonds.empty:
         raise ValueError("Universe filters leave no eligible bonds.")
 
-    bonds, comparison = validated_bonds(all_bonds, nominal=nominal)
+    bonds, comparison, validated_cashflows = _validated_bonds_with_cashflows(
+        all_bonds, nominal=nominal
+    )
     # These structured bonds are validated against their explicit schedules,
     # rather than the generic fixed-coupon cash-flow generator.
     override_bonds = all_bonds.loc[all_bonds["isincode"].isin(override_isins)]
@@ -337,7 +365,10 @@ def build_cashflow_outputs(nominal=NOMINAL, universe_filters=None):
     nominal_bonds = bonds.loc[
         ~bonds["isincode"].isin(inflation_linked_isins)
     ].reset_index(drop=True)
-    cashflows = create_all_cashflows(nominal_bonds, nominal=nominal)
+    nominal_isins = set(nominal_bonds["isincode"])
+    cashflows = validated_cashflows.loc[
+        validated_cashflows["isincode"].isin(nominal_isins)
+    ].copy()
     cashflows = apply_cashflow_overrides(
         cashflows, overrides, nominal_bonds, nominal=nominal
     )
@@ -359,7 +390,7 @@ def build_cashflow_outputs(nominal=NOMINAL, universe_filters=None):
         "inflation_linked_bonds": sorted(inflation_linked_isins),
         "universe_filters": filters.to_dict(),
         "universe_counts": {
-            "cleaned_before_filters": len(all_bonds_before_filters),
+            "cleaned_before_filters": len(fd_clean),
             "after_filters": len(all_bonds),
             "cashflow_bonds": len(bonds),
         },

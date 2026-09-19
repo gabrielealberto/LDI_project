@@ -4,6 +4,8 @@
 
 let _pollInterval = null;
 let _currentRunId = null;
+let _pollFailures = 0;
+let _pollInFlight = false;
 
 /* ──────────────────────────────────────────────
    Preflight checks
@@ -56,7 +58,8 @@ async function runPreflightChecks() {
     }
     return allGood;
   } catch (e) {
-    list.innerHTML = `<div class="check-item"><span class="check-icon fail">✗</span> Could not check readiness: ${e.message}</div>`;
+    list.innerHTML = '<div class="check-item"><span class="check-icon fail">✗</span><span></span></div>';
+    list.querySelector('.check-item span:last-child').textContent = `Could not check readiness: ${e.message}`;
     document.getElementById('btn-run').disabled = true;
     return false;
   }
@@ -99,12 +102,16 @@ document.getElementById('btn-run')?.addEventListener('click', async () => {
 
 function startPolling(runId) {
   if (_pollInterval) clearInterval(_pollInterval);
+  _pollFailures = 0;
   _pollInterval = setInterval(() => pollStatus(runId), 1200);
 }
 
 async function pollStatus(runId) {
+  if (_pollInFlight) return;
+  _pollInFlight = true;
   try {
-    const status = await App.apiFetch(`/api/run/status/${runId}`);
+    const status = await App.apiFetch(`/api/run/status/${runId}`, { timeout: 8000 });
+    _pollFailures = 0;
     // Render new log lines
     const log = status.log || [];
     const logEl = document.getElementById('run-log');
@@ -122,7 +129,7 @@ async function pollStatus(runId) {
       showProgress(false);
       document.getElementById('btn-run').disabled = false;
       App.updateRunStatus('success');
-      App.enableResultsTab(true, true);
+      App.enableResultsTab(true, false);
       appendLog('Results and stress analysis are now available.', 'ok');
       document.dispatchEvent(new CustomEvent('runCompleted'));
     } else if (status.status === 'error') {
@@ -136,6 +143,17 @@ async function pollStatus(runId) {
     }
   } catch (e) {
     console.error('Polling error', e);
+    _pollFailures += 1;
+    if (_pollFailures >= 3) {
+      clearInterval(_pollInterval);
+      _pollInterval = null;
+      showProgress(false);
+      document.getElementById('btn-run').disabled = false;
+      setRunStatus('error', 'Connection lost while checking the pipeline.');
+      showRunError('Unable to monitor the pipeline. Check the server and open Run again to retry.');
+    }
+  } finally {
+    _pollInFlight = false;
   }
 }
 

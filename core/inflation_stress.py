@@ -350,12 +350,16 @@ def _build_regime_shift_baseline(
 
 
 def build_stressed_baseline(
-    baseline: pd.DataFrame, history: pd.DataFrame, scenario: InflationShock
+    baseline: pd.DataFrame,
+    history: pd.DataFrame,
+    scenario: InflationShock,
+    validate_inputs: bool = True,
 ) -> pd.DataFrame:
     """Apply one shock to a baseline while retaining its monthly structure."""
     scenario.validate()
-    baseline = _validate_path(baseline, "Inflation baseline")
-    history = _validate_path(history, "Inflation history")
+    if validate_inputs:
+        baseline = _validate_path(baseline, "Inflation baseline")
+        history = _validate_path(history, "Inflation history")
     expected_start = history["date"].iloc[-1] + pd.offsets.MonthBegin(1)
     if baseline["date"].iloc[0] != expected_start:
         raise ValueError(
@@ -431,9 +435,16 @@ def build_stressed_index_provider(
     scenario: InflationShock,
     foi_path: Path,
     hicp_path: Path,
+    validate_inputs: bool = True,
 ) -> tuple[BaselineIndexProvider, pd.DataFrame]:
     """Return one shared provider and its auditable shocked forecast path."""
-    stressed = build_stressed_baseline(baseline, history, scenario)
+    stressed = build_stressed_baseline(
+        baseline, history, scenario, validate_inputs=validate_inputs
+    )
     return build_index_provider(
-        stressed, foi_path=foi_path, hicp_path=hicp_path
+        stressed,
+        foi_path=foi_path,
+        hicp_path=hicp_path,
+        history=history,
+        validate_inputs=validate_inputs,
     ), stressed

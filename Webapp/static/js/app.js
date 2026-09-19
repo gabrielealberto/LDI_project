@@ -47,6 +47,7 @@ const AppState = {
   runStatus: 'idle',   // idle | running | success | error
   resultsAvailable: false,
   stressAvailable: false,
+  loadedRun: null,
 };
 
 function updateRunStatus(status) {
@@ -74,10 +75,21 @@ function enableResultsTab(resultsOk, stressOk) {
   navStress.setAttribute('aria-disabled', stressOk ? 'false' : 'true');
 }
 
+function setLoadedRun(run) {
+  AppState.loadedRun = run || null;
+  document.dispatchEvent(new CustomEvent('runLoaded', { detail: AppState.loadedRun }));
+}
+
+function getLoadedRun() {
+  return AppState.loadedRun;
+}
+
 async function refreshAvailability() {
   try {
     const availability = await apiFetch('/api/results/available');
-    enableResultsTab(availability.results_available, availability.stress_available);
+    // Archived results are only candidates until the user explicitly loads them.
+    // Inflation Shocks is enabled by loadResults() or by a newly completed run.
+    enableResultsTab(availability.results_available, false);
     return availability;
   } catch (_) {
     return null;
@@ -88,13 +100,23 @@ async function refreshAvailability() {
    API helpers
    ────────────────────────────────────────────── */
 async function apiFetch(url, options = {}) {
+  const { timeout = 15000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
   const defaults = {
     headers: { 'Content-Type': 'application/json' },
   };
-  const res = await fetch(url, { ...defaults, ...options });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-  return json;
+  try {
+    const res = await fetch(url, { ...defaults, ...fetchOptions, signal: controller.signal });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error(`Request timed out: ${url}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* ──────────────────────────────────────────────
@@ -213,9 +235,11 @@ function initTableSearch(inputId, tbodyId) {
 /* ──────────────────────────────────────────────
    Chart defaults
    ────────────────────────────────────────────── */
-Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-Chart.defaults.font.size = 11.5;
-Chart.defaults.color = '#667783';
+if (window.Chart?.defaults) {
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  Chart.defaults.font.size = 11.5;
+  Chart.defaults.color = '#667783';
+}
 
 const CHART_COLORS = {
   navy:  '#182B3A',
@@ -238,11 +262,19 @@ const SCENARIO_COLORS = [
 document.addEventListener('DOMContentLoaded', () => {
   initSubTabs();
   initCollapsibles();
+  if (window.Chart?.isFallback) {
+    const note = document.createElement('div');
+    note.className = 'alert alert-warn';
+    note.setAttribute('role', 'status');
+    note.textContent = 'Charts are unavailable offline; tables and analysis remain available.';
+    document.getElementById('content')?.prepend(note);
+  }
   refreshAvailability();
 });
 
 // Expose globals for sub-modules
 window.App = {
   apiFetch, fmt, updateRunStatus, enableResultsTab, refreshAvailability,
+  setLoadedRun, getLoadedRun,
   CHART_COLORS, SCENARIO_COLORS, initSortableTable, initTableSearch,
 };

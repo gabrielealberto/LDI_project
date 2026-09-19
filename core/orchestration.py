@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+from pyarrow.parquet import ParquetFile
 
 from .ingestion_support import atomic_write_json
 from .utils import PROCESSED_DIR
@@ -98,7 +99,7 @@ class RunAudit:
             "size_bytes": path.stat().st_size,
         }
         try:
-            entry["rows"] = len(pd.read_parquet(path))
+            entry["rows"] = ParquetFile(path).metadata.num_rows
         except (OSError, ValueError, ImportError):
             pass
         entry.update(_json_value(metadata))

@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LDI Portfolio Manager</title>
   <meta name="description" content="Professional liability-driven investment portfolio configuration and analysis platform.">
-  <link rel="stylesheet" href="/static/css/app.css?v=ui-review-1">
+  <link rel="stylesheet" href="/static/css/app.css?v=ui-review-2">
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" onerror="this.onerror=null;this.src='/static/js/chart-fallback.js?v=ui-review-2'"></script>
+  <script src="/static/js/chart-fallback.js?v=ui-review-2"></script>
 </head>
 <body>
 <!-- Toast notification container -->
@@ -277,7 +278,7 @@
               <div class="mt-16">
                 <div class="form-group mb-8">
                   <label class="form-label">Preview scenario</label>
-                  <select class="form-control" id="scenario-preview-select" style="width:300px"></select>
+                  <select class="form-control" id="scenario-preview-select" style="width:300px;max-width:100%"></select>
                 </div>
                 <div class="chart-wrap" style="height:220px">
                   <canvas id="scenario-preview-chart"></canvas>
@@ -294,7 +295,7 @@
       </div><!-- /tab-configuration -->
 
       <!-- ═══════ JSON EDITOR MODAL (shared) ═══════ -->
-      <div class="modal-overlay hidden" id="json-editor-overlay">
+      <div class="modal-overlay hidden" id="json-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="json-editor-title">
         <div class="modal" style="width:820px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column">
           <div class="modal-header">
             <span class="modal-title" id="json-editor-title">Edit JSON</span>
@@ -381,6 +382,7 @@
       <!-- ═══════ TAB: Results ═══════ -->
       <div class="tab-panel" id="tab-results">
         <div id="results-load-error" class="alert alert-error hidden" role="alert"></div>
+        <div id="results-loading" class="alert alert-info hidden" role="status" aria-live="polite">Loading results…</div>
         <div id="results-empty-state" class="results-empty-state">
           <div class="results-empty-icon">📊</div>
           <h2>No results loaded</h2>
@@ -459,7 +461,7 @@
 
         <!-- Sub-tabs -->
         <div class="panel">
-          <div class="sub-tabs">
+          <div class="sub-tabs" role="tablist" aria-label="Result views">
             <div class="sub-tab active" data-subtab="portfolio" id="stab-portfolio" role="tab" tabindex="0" aria-selected="true" aria-controls="subpanel-portfolio">Portfolio</div>
             <div class="sub-tab" data-subtab="cashflows" id="stab-cashflows" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-cashflows">Cash Flows</div>
             <div class="sub-tab" data-subtab="annual" id="stab-annual" role="tab" tabindex="0" aria-selected="false" aria-controls="subpanel-annual">Annual Overview</div>
@@ -604,7 +606,8 @@
 
       <!-- ═══════ TAB: Stress Analysis ═══════ -->
       <div class="tab-panel" id="tab-stress">
-        <div id="stress-no-data" class="alert alert-warn hidden">
+        <div id="stress-run-banner" class="results-run-banner hidden" role="status"></div>
+        <div id="stress-no-data" class="alert alert-warn hidden" role="alert">
           No stress results available. Run the optimization first.
         </div>
 
@@ -695,7 +698,7 @@
 </div><!-- /app -->
 
 <!-- ─── Liability Modal ───────────────────── -->
-<div class="modal-overlay hidden" id="liability-modal-overlay">
+<div class="modal-overlay hidden" id="liability-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="liability-modal-title">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title" id="liability-modal-title">Add Liability</span>
@@ -780,7 +783,7 @@
 </div>
 
 <!-- ─── Scenario Modal ───────────────────── -->
-<div class="modal-overlay hidden" id="scenario-modal-overlay">
+<div class="modal-overlay hidden" id="scenario-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="scenario-modal-title">
   <div class="modal" style="width:640px">
     <div class="modal-header">
       <span class="modal-title" id="scenario-modal-title">Add Stress Scenario</span>
@@ -885,10 +888,10 @@
   </div>
 </div>
 
-<script src="/static/js/app.js?v=ui-review-1"></script>
-<script src="/static/js/config.js?v=ui-review-1"></script>
-<script src="/static/js/run.js?v=ui-review-1"></script>
-<script src="/static/js/results.js?v=ui-review-1"></script>
-<script src="/static/js/stress.js?v=ui-review-1"></script>
+<script src="/static/js/app.js?v=ui-review-2"></script>
+<script src="/static/js/config.js?v=ui-review-2"></script>
+<script src="/static/js/run.js?v=ui-review-2"></script>
+<script src="/static/js/results.js?v=ui-review-2"></script>
+<script src="/static/js/stress.js?v=ui-review-2"></script>
 </body>
 </html>

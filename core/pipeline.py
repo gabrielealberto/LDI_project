@@ -141,11 +141,13 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
     _report(progress, "Updating the official inflation indices")
     foi_path = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
     hicp_path = PROJECT_ROOT / "data" / "hicp_xt_ea.parquet"
-    if _usable_cached_monthly_index(foi_path, "foi_xt_it"):
+    foi_cached = _usable_cached_monthly_index(foi_path, "foi_xt_it")
+    hicp_cached = _usable_cached_monthly_index(hicp_path, "hicp_xt_ea")
+    if foi_cached:
         logging.info("FOI cache is current; download skipped.")
     else:
         download_foi()
-    if _usable_cached_monthly_index(hicp_path, "hicp_xt_ea"):
+    if hicp_cached:
         logging.info("HICP cache is current; download skipped.")
     else:
         download_hicp()
@@ -157,7 +159,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
         audit.record_input(
             "foi",
             foi_path,
-            cache_reused=_usable_cached_monthly_index(foi_path, "foi_xt_it"),
+            cache_reused=foi_cached,
             last_observation=str(
                 pd.read_parquet(foi_path, columns=["date"]).date.max()
             ),
@@ -165,7 +167,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
         audit.record_input(
             "hicp",
             hicp_path,
-            cache_reused=_usable_cached_monthly_index(hicp_path, "hicp_xt_ea"),
+            cache_reused=hicp_cached,
             last_observation=str(
                 pd.read_parquet(hicp_path, columns=["date"]).date.max()
             ),

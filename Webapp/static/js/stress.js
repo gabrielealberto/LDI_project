@@ -4,6 +4,12 @@
 
 let _stressData     = {};  // { summary, monthly, paths, scenarios }
 let _selectedScenarios = new Set();
+let _stressLoadedRunId = null;
+let _stressLoading = false;
+
+function stressUrl(path) {
+  return _stressLoadedRunId ? `${path}?run_id=${encodeURIComponent(_stressLoadedRunId)}` : path;
+}
 
 // Charts
 let _foiChart      = null;
@@ -17,21 +23,27 @@ let _stressCoverageChart = null;
    ────────────────────────────────────────────── */
 async function loadStressData() {
   const noData = document.getElementById('stress-no-data');
-  try {
-    const avail = await App.apiFetch('/api/results/available');
-    if (!avail.stress_available) {
-      noData.classList.remove('hidden');
-      return;
-    }
-    noData.classList.add('hidden');
-  } catch (_) { return; }
+  const loadedRun = App.getLoadedRun();
+  if (!loadedRun) {
+    noData.className = 'alert alert-warn';
+    noData.classList.remove('hidden');
+    return;
+  }
+  if (_stressLoadedRunId === loadedRun.run_id && _stressData.summary) return;
+  if (_stressLoading) return;
+  _stressLoading = true;
+  _stressLoadedRunId = loadedRun.run_id;
+  noData.className = 'alert alert-info';
+  noData.textContent = 'Loading stress analysis…';
+  noData.classList.remove('hidden');
+  renderRunBanner(loadedRun, 'stress-run-banner');
 
   try {
     const [summary, monthly, paths, scenarioList] = await Promise.all([
-      App.apiFetch('/api/stress/summary'),
-      App.apiFetch('/api/stress/monthly'),
-      App.apiFetch('/api/stress/paths'),
-      App.apiFetch('/api/stress/scenarios'),
+      App.apiFetch(stressUrl('/api/stress/summary')),
+      App.apiFetch(stressUrl('/api/stress/monthly')),
+      App.apiFetch(stressUrl('/api/stress/paths')),
+      App.apiFetch(stressUrl('/api/stress/scenarios')),
     ]);
 
     _stressData = { summary, monthly, paths, scenarioList };
@@ -45,9 +57,14 @@ async function loadStressData() {
     renderSummaryTable(summary);
     renderScenarioCheckboxes(scenarioList);
     renderAllCharts();
+    noData.className = 'alert alert-warn hidden';
   } catch (e) {
+    noData.className = 'alert alert-error';
     noData.textContent = 'Error loading stress data: ' + e.message;
     noData.classList.remove('hidden');
+    _stressLoadedRunId = null;
+  } finally {
+    _stressLoading = false;
   }
 }
 
@@ -382,4 +399,18 @@ document.addEventListener('tabActivated', e => {
   if (e.detail === 'stress') {
     loadStressData();
   }
+});
+
+document.addEventListener('runLoaded', e => {
+  if (e.detail?.run_id !== _stressLoadedRunId) {
+    _stressData = {};
+    _stressLoadedRunId = null;
+  }
+  renderRunBanner(e.detail, 'stress-run-banner');
+  if (document.getElementById('tab-stress')?.classList.contains('active')) loadStressData();
+});
+
+document.getElementById('btn-export-stress-excel')?.addEventListener('click', () => {
+  const runId = _stressLoadedRunId || App.getLoadedRun()?.run_id;
+  if (runId) window.location.href = `/api/stress/export/summary.xlsx?run_id=${encodeURIComponent(runId)}`;
 });

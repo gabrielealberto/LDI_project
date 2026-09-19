@@ -7,6 +7,12 @@ let _cfAnnualChart   = null;
 let _issuerChart     = null;
 let _coverageChart   = null;
 let _surplusChart    = null;
+let _resultsLoading = false;
+let _loadedRunId = null;
+
+function resultsUrl(path) {
+  return _loadedRunId ? `${path}?run_id=${encodeURIComponent(_loadedRunId)}` : path;
+}
 
 function formatRunTimestamp(value) {
   if (!value) return 'unknown time';
@@ -15,8 +21,8 @@ function formatRunTimestamp(value) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function renderRunBanner(run) {
-  const banner = document.getElementById('results-run-banner');
+function renderRunBanner(run, bannerId = 'results-run-banner') {
+  const banner = document.getElementById(bannerId);
   if (!banner || !run) return;
   const summary = run.summary || {};
   const parameters = run.parameters || {};
@@ -52,9 +58,13 @@ function renderRunBanner(run) {
    Load all results
    ────────────────────────────────────────────── */
 async function loadResults() {
+  if (_resultsLoading) return;
+  _resultsLoading = true;
   const emptyState = document.getElementById('results-empty-state');
   const content = document.getElementById('results-content');
   const errorBox = document.getElementById('results-load-error');
+  const loading = document.getElementById('results-loading');
+  let availability = null;
   const showError = message => {
     if (errorBox) {
       errorBox.textContent = message;
@@ -62,24 +72,34 @@ async function loadResults() {
     }
   };
   if (errorBox) errorBox.classList.add('hidden');
+  if (loading) loading.classList.remove('hidden');
+  content.classList.add('hidden');
   try {
     const avail = await App.apiFetch('/api/results/available');
-    App.enableResultsTab(avail.results_available, avail.stress_available);
+    availability = avail;
+    // Availability in the archive does not mean that this run is loaded.
+    App.enableResultsTab(avail.results_available, false);
     if (!avail.results_available) {
       emptyState.querySelector('h2').textContent = 'No completed run available';
       emptyState.querySelector('p').textContent =
         'Run the pipeline first. Once it has completed successfully, click this button to load its results.';
       emptyState.classList.remove('hidden');
       content.classList.add('hidden');
+      if (loading) loading.classList.add('hidden');
+      _resultsLoading = false;
       return;
     }
     emptyState.classList.add('hidden');
-    content.classList.remove('hidden');
     renderRunBanner(avail.latest_run);
   } catch (e) {
     showError(`Unable to check available results: ${e.message}`);
+    emptyState.classList.remove('hidden');
+    if (loading) loading.classList.add('hidden');
+    _resultsLoading = false;
     return;
   }
+
+  _loadedRunId = availability.latest_run?.run_id || null;
 
   try {
     await Promise.all([
@@ -92,8 +112,21 @@ async function loadResults() {
     ]);
   } catch (e) {
     showError(`Unable to load results: ${e.message}`);
+    emptyState.classList.remove('hidden');
+    content.classList.add('hidden');
+    if (loading) loading.classList.add('hidden');
+    _loadedRunId = null;
+    _resultsLoading = false;
     return;
   }
+
+  // Only expose Inflation Shocks once the selected run's Results are loaded.
+  App.setLoadedRun(availability.latest_run);
+  App.enableResultsTab(true, true);
+  content.classList.remove('hidden');
+  emptyState.classList.add('hidden');
+  if (loading) loading.classList.add('hidden');
+  _resultsLoading = false;
 
   App.initSortableTable('portfolio-table');
   App.initTableSearch('portfolio-search', 'portfolio-tbody');
@@ -102,7 +135,7 @@ async function loadResults() {
 
 /* ── KPIs ── */
 async function loadSummaryKPIs() {
-  const s = await App.apiFetch('/api/results/summary');
+  const s = await App.apiFetch(resultsUrl('/api/results/summary'));
   const set = (id, val) => {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
@@ -125,7 +158,7 @@ async function loadSummaryKPIs() {
 
 /* ── Portfolio ── */
 async function loadPortfolioTable() {
-  const rows = await App.apiFetch('/api/results/portfolio');
+  const rows = await App.apiFetch(resultsUrl('/api/results/portfolio'));
   const tbody = document.getElementById('portfolio-tbody');
   const tfoot = document.getElementById('portfolio-tfoot');
   const count = document.getElementById('portfolio-count');
@@ -165,7 +198,7 @@ async function loadPortfolioTable() {
 
 /* ── Monthly cashflows ── */
 async function loadCashflowsMonthly() {
-  const rows = await App.apiFetch('/api/results/cashflows/monthly');
+  const rows = await App.apiFetch(resultsUrl('/api/results/cashflows/monthly'));
   const tbody = document.getElementById('cf-tbody');
   tbody.innerHTML = rows.map(r => `
     <tr>
@@ -295,7 +328,7 @@ function renderCoverageCharts(rows) {
 
 /* ── Annual cashflows ── */
 async function loadCashflowsAnnual() {
-  const rows = await App.apiFetch('/api/results/cashflows/annual');
+  const rows = await App.apiFetch(resultsUrl('/api/results/cashflows/annual'));
   const tbody = document.getElementById('annual-tbody');
   const tfoot = document.getElementById('annual-tfoot');
 
@@ -356,7 +389,7 @@ async function loadCashflowsAnnual() {
 
 /* ── Issuer allocation ── */
 async function loadIssuerAllocation() {
-  const rows = await App.apiFetch('/api/results/issuer-allocation');
+  const rows = await App.apiFetch(resultsUrl('/api/results/issuer-allocation'));
   const tbody = document.getElementById('issuer-tbody');
   tbody.innerHTML = rows.map(r => `
     <tr>
@@ -399,7 +432,7 @@ async function loadIssuerAllocation() {
 
 /* ── Methodology ── */
 async function loadMethodology() {
-  const methodology = await App.apiFetch('/api/results/methodology');
+  const methodology = await App.apiFetch(resultsUrl('/api/results/methodology'));
   const intro = document.getElementById('methodology-intro');
   const sections = document.getElementById('methodology-sections');
   if (intro) {
@@ -424,8 +457,7 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
   btn.disabled = true;
   btn.textContent = 'Exporting…';
   try {
-    await App.apiFetch('/api/results/export/excel', { method: 'POST' });
-    window.location.href = '/api/results/download/excel';
+    window.location.href = resultsUrl('/api/results/export/portfolio.xlsx');
   } catch (e) {
     alert('Export failed: ' + e.message);
   } finally {

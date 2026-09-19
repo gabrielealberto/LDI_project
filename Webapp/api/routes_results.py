@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import math
-
-import numpy as np
 import pandas as pd
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
+from .artifact_support import artifact, records as _records, successful_run
 from .excel_export import excel_download
 
 bp = Blueprint("results", __name__, url_prefix="/api/results")
@@ -19,55 +17,14 @@ def _repository():
 
 
 def _latest_success():
-    record = _repository().latest("success")
-    if record is None:
-        return None, (jsonify({"error": "No completed run is available."}), 404)
-    return record, None
-
-
-def _artifact(record: dict, name: str):
-    path = _repository().artifact(record["run_id"], name)
-    if not path.exists():
-        return None, (
-            jsonify({"error": f"Artifact {name!r} is not available for this run."}),
-            404,
-        )
-    return path, None
-
-
-def _safe(value):
-    if value is None or value is pd.NA:
-        return None
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating, float)):
-        number = float(value)
-        return number if math.isfinite(number) else None
-    if isinstance(value, (pd.Timestamp, pd.Period)):
-        return str(value)
-    if hasattr(value, "item"):
-        return _safe(value.item())
-    return value
-
-
-def _records(frame: pd.DataFrame) -> list[dict]:
-    output = frame.copy()
-    for column in output.columns:
-        if pd.api.types.is_datetime64_any_dtype(output[column]):
-            output[column] = output[column].apply(
-                lambda value: value.strftime("%Y-%m-%d") if pd.notna(value) else None
-            )
-    return [
-        {key: _safe(value) for key, value in row.items()}
-        for row in output.to_dict(orient="records")
-    ]
+    return successful_run(_repository(), request.args.get("run_id"))
 
 
 def _load_frame(name: str):
     record, error = _latest_success()
     if error:
         return None, error
-    path, error = _artifact(record, name)
+    path, error = artifact(_repository(), record, name)
     if error:
         return None, error
     try:
@@ -154,7 +111,7 @@ def summary():
     record, error = _latest_success()
     if error:
         return error
-    path, error = _artifact(record, "summary.json")
+    path, error = artifact(_repository(), record, "summary.json")
     if error:
         return error
     return jsonify(json.loads(path.read_text(encoding="utf-8")))

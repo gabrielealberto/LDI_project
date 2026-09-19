@@ -115,9 +115,18 @@ document.getElementById('btn-save-config')?.addEventListener('click', async () =
    ────────────────────────────────────────────── */
 function showConfigAlert(type, msg) {
   const area = document.getElementById('config-alert-area');
-  area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  const alert = document.createElement('div');
+  alert.className = `alert alert-${type}`;
+  alert.textContent = msg;
+  area.replaceChildren(alert);
   setTimeout(() => { area.innerHTML = ''; }, 5000);
 }
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const overlay = document.querySelector('.modal-overlay:not(.hidden)');
+  overlay?.querySelector('.modal-close')?.click();
+});
 
 /* ──────────────────────────────────────────────
    Liabilities

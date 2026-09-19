@@ -2,45 +2,22 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pandas as pd
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
+from .artifact_support import records as _records, safe_value as _safe, successful_run
 from .excel_export import excel_download
 
 
 bp = Blueprint("stress", __name__, url_prefix="/api/stress")
 
 
-def _safe(value):
-    if value is None or value is pd.NA:
-        return None
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating, float)):
-        number = float(value)
-        return number if math.isfinite(number) else None
-    if isinstance(value, (pd.Timestamp, pd.Period)):
-        return str(value)
-    if hasattr(value, "item"):
-        return _safe(value.item())
-    return value
-
-
-def _records(frame: pd.DataFrame) -> list[dict]:
-    return [
-        {key: _safe(value) for key, value in row.items()}
-        for row in frame.to_dict(orient="records")
-    ]
-
-
 def _load(name: str):
     repository = current_app.extensions["run_repository"]
-    record = repository.latest("success")
-    if record is None:
-        return None, (jsonify({"error": "No completed run is available."}), 404)
+    record, error = successful_run(repository, request.args.get("run_id"))
+    if error:
+        return None, error
     path = repository.artifact(record["run_id"], name)
     if not path.exists():
         return None, (
