@@ -39,6 +39,7 @@ class MainOrchestrationTests(unittest.TestCase):
             patch.object(
                 main, "load_bond_inputs", return_value=(pd.DataFrame(), pd.DataFrame())
             ),
+            patch.object(main.pd, "read_parquet", return_value=pd.DataFrame()),
             patch.object(main, "optimize_cashflow_matching", side_effect=optimize),
             patch.object(main, "print_purchase_plan"),
             patch.object(

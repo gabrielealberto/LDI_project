@@ -69,7 +69,17 @@ class WebAppTests(unittest.TestCase):
                     self.assertIn("Invalid", response.get_json()["error"])
 
     def test_universe_filters_are_available_for_runs(self):
-        response = self.client.get("/api/config/universe")
+        bond_universe = self.storage / "fd_clean.parquet"
+        pd.DataFrame(
+            {
+                "ratingsp": ["AAA", "BBB-"],
+                "ratingmoodys": [None, None],
+                "issuercode": ["GOV_DE", "GOV_RO"],
+                "issuerdescription": ["Germany", "Romania"],
+            }
+        ).to_parquet(bond_universe, index=False)
+        with patch("core.utils.FD_CLEAN_PATH", bond_universe):
+            response = self.client.get("/api/config/universe")
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["editable"])
