@@ -72,7 +72,13 @@ class BondCleanerTests(unittest.TestCase):
     def test_rating_floor_is_inclusive_for_both_agencies(self):
         bonds = pd.DataFrame(
             {
-                "isincode": ["SP_FLOOR", "MOODYS_FLOOR", "SP_BELOW", "MOODYS_BELOW", "DISCORDANT"],
+                "isincode": [
+                    "SP_FLOOR",
+                    "MOODYS_FLOOR",
+                    "SP_BELOW",
+                    "MOODYS_BELOW",
+                    "DISCORDANT",
+                ],
                 "currencycode": ["EUR"] * 5,
                 "issuercode": ["GOV_IT"] * 5,
                 "ratingsp": ["BBB-", None, "BB+", None, "AAA"],
@@ -88,9 +94,7 @@ class BondCleanerTests(unittest.TestCase):
 
         cleaned, _ = clean_fd(bonds)
 
-        self.assertEqual(
-            cleaned["isincode"].tolist(), ["SP_FLOOR", "MOODYS_FLOOR"]
-        )
+        self.assertEqual(cleaned["isincode"].tolist(), ["SP_FLOOR", "MOODYS_FLOOR"])
 
     def test_universe_filter_matches_effective_worst_rating(self):
         fd = pd.DataFrame(
@@ -103,14 +107,16 @@ class BondCleanerTests(unittest.TestCase):
         )
         bi = pd.DataFrame({"isincode": fd["isincode"]})
 
-        filtered, filtered_bi = apply_universe_filters(
-            fd, bi, allowed_ratings=["BBB-"]
-        )
+        filtered, filtered_bi = apply_universe_filters(fd, bi, allowed_ratings=["BBB-"])
 
         self.assertEqual(filtered["isincode"].tolist(), ["AAA_BAA3", "BBB_MINUS_AAA"])
-        self.assertEqual(filtered_bi["isincode"].tolist(), ["AAA_BAA3", "BBB_MINUS_AAA"])
+        self.assertEqual(
+            filtered_bi["isincode"].tolist(), ["AAA_BAA3", "BBB_MINUS_AAA"]
+        )
 
-    def test_universe_filter_intersects_rating_and_issuer_and_keeps_metadata_aligned(self):
+    def test_universe_filter_intersects_rating_and_issuer_and_keeps_metadata_aligned(
+        self,
+    ):
         fd = pd.DataFrame(
             {
                 "isincode": ["IT_A", "IT_B", "FR_A", "FR_B"],

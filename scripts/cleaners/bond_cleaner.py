@@ -18,18 +18,50 @@ LIQUID_PRICE_TYPES = frozenset({"LP"})
 MIN_DAILY_BOND_VOLUME = 20_000
 
 RATING_ORDER = (
-    "AAA", "AA+", "AA", "AA-", "A+", "A", "A-",
-    "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-",
-    "B+", "B", "B-", "CCC", "CC", "C", "D",
+    "AAA",
+    "AA+",
+    "AA",
+    "AA-",
+    "A+",
+    "A",
+    "A-",
+    "BBB+",
+    "BBB",
+    "BBB-",
+    "BB+",
+    "BB",
+    "BB-",
+    "B+",
+    "B",
+    "B-",
+    "CCC",
+    "CC",
+    "C",
+    "D",
 )
 RATING_SCORE = {rating: score for score, rating in enumerate(RATING_ORDER)}
 MOODYS_TO_CANONICAL = {
-    "AAA": "AAA", "AA1": "AA+", "AA2": "AA", "AA3": "AA-",
-    "A1": "A+", "A2": "A", "A3": "A-",
-    "BAA1": "BBB+", "BAA2": "BBB", "BAA3": "BBB-",
-    "BA1": "BB+", "BA2": "BB", "BA3": "BB-",
-    "B1": "B+", "B2": "B", "B3": "B-",
-    "CAA1": "CCC", "CAA2": "CC", "CAA3": "CC", "CA": "C", "C": "D",
+    "AAA": "AAA",
+    "AA1": "AA+",
+    "AA2": "AA",
+    "AA3": "AA-",
+    "A1": "A+",
+    "A2": "A",
+    "A3": "A-",
+    "BAA1": "BBB+",
+    "BAA2": "BBB",
+    "BAA3": "BBB-",
+    "BA1": "BB+",
+    "BA2": "BB",
+    "BA3": "BB-",
+    "B1": "B+",
+    "B2": "B",
+    "B3": "B-",
+    "CAA1": "CCC",
+    "CAA2": "CC",
+    "CAA3": "CC",
+    "CA": "C",
+    "C": "D",
 }
 MINIMUM_CLEANING_RATING = "BBB-"
 
@@ -50,7 +82,11 @@ def effective_rating(row):
         canonical_rating(row.get("ratingmoodys"), "moodys"),
     ]
     ratings = [rating for rating in ratings if rating is not None]
-    return RATING_ORDER[max(RATING_SCORE[rating] for rating in ratings)] if ratings else None
+    return (
+        RATING_ORDER[max(RATING_SCORE[rating] for rating in ratings)]
+        if ratings
+        else None
+    )
 
 
 def liquid_bonds(
@@ -97,7 +133,9 @@ def clean_fd(df, min_daily_volume=MIN_DAILY_BOND_VOLUME):
     report["no_bei"] = len(cleaned)
 
     floor_score = RATING_SCORE[MINIMUM_CLEANING_RATING]
-    sp_score = cleaned["ratingsp"].map(lambda value: RATING_SCORE.get(canonical_rating(value, "sp"), -1))
+    sp_score = cleaned["ratingsp"].map(
+        lambda value: RATING_SCORE.get(canonical_rating(value, "sp"), -1)
+    )
     moodys_score = cleaned["ratingmoodys"].map(
         lambda value: RATING_SCORE.get(canonical_rating(value, "moodys"), -1)
     )

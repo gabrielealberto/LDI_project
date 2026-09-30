@@ -22,7 +22,9 @@ def excel_download(frame: pd.DataFrame, filename: str, sheet_name: str):
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
         for column_cells in sheet.columns:
-            values = ["" if cell.value is None else str(cell.value) for cell in column_cells]
+            values = [
+                "" if cell.value is None else str(cell.value) for cell in column_cells
+            ]
             sheet.column_dimensions[column_cells[0].column_letter].width = min(
                 max(max(map(len, values)) + 2, 12), 36
             )

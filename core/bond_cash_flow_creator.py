@@ -211,9 +211,7 @@ def validated_bonds(bonds, nominal=NOMINAL):
 
 def _validated_bonds_with_cashflows(bonds, nominal=NOMINAL):
     """Validate bonds once and return the generic flows for reuse downstream."""
-    comparison, cashflows = _compare_gross_ytm_with_cashflows(
-        bonds, nominal=nominal
-    )
+    comparison, cashflows = _compare_gross_ytm_with_cashflows(bonds, nominal=nominal)
     valid_isin = comparison.loc[comparison["is_equal"], "isincode"]
     validated = bonds[bonds["isincode"].isin(valid_isin)].reset_index(drop=True)
     return validated, comparison, cashflows
