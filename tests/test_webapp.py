@@ -48,6 +48,26 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(invalid.status_code, 400)
 
+    def test_corrupt_json_configuration_returns_a_structured_error(self):
+        import Webapp.api.routes_config as routes_config
+
+        liabilities = self.storage / "liabilities.json"
+        scenarios = self.storage / "inflation_stress_scenarios.json"
+        liabilities.write_text("{corrupt", encoding="utf-8")
+        scenarios.write_text("[corrupt", encoding="utf-8")
+        with (
+            patch.object(routes_config, "LIABILITIES_PATH", liabilities),
+            patch.object(routes_config, "SCENARIOS_PATH", scenarios),
+        ):
+            for endpoint in (
+                "/api/config/liabilities",
+                "/api/config/inflation/scenarios",
+            ):
+                with self.subTest(endpoint=endpoint):
+                    response = self.client.get(endpoint)
+                    self.assertEqual(response.status_code, 500)
+                    self.assertIn("Invalid", response.get_json()["error"])
+
     def test_universe_filters_are_available_for_runs(self):
         response = self.client.get("/api/config/universe")
         self.assertEqual(response.status_code, 200)
@@ -58,9 +78,23 @@ class WebAppTests(unittest.TestCase):
         self.assertIn({"code": "GOV_RO", "label": "Romania"}, payload["issuers"])
         self.assertEqual(
             payload["ratings"],
-            sorted(payload["ratings"], key=lambda r: (
-                ("AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-").index(r)
-            )),
+            sorted(
+                payload["ratings"],
+                key=lambda r: (
+                    (
+                        "AAA",
+                        "AA+",
+                        "AA",
+                        "AA-",
+                        "A+",
+                        "A",
+                        "A-",
+                        "BBB+",
+                        "BBB",
+                        "BBB-",
+                    ).index(r)
+                ),
+            ),
         )
         self.assertEqual(
             [item["label"] for item in payload["issuers"]],

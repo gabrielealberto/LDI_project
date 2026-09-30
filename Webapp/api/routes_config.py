@@ -110,7 +110,10 @@ def reset_parameters():
 
 @bp.get("/liabilities")
 def get_liabilities():
-    return jsonify(_read_json(LIABILITIES_PATH, []))
+    try:
+        return jsonify(_read_json(LIABILITIES_PATH, []))
+    except (OSError, json.JSONDecodeError) as error:
+        return jsonify({"error": f"Invalid liabilities configuration: {error}"}), 500
 
 
 def _validate_liabilities(data) -> list[str]:
@@ -180,7 +183,12 @@ def get_baseline():
 
 @bp.get("/inflation/scenarios")
 def get_scenarios():
-    return jsonify(_read_json(SCENARIOS_PATH, []))
+    try:
+        return jsonify(_read_json(SCENARIOS_PATH, []))
+    except (OSError, json.JSONDecodeError) as error:
+        return jsonify(
+            {"error": f"Invalid inflation scenarios configuration: {error}"}
+        ), 500
 
 
 def _validate_scenarios(data) -> list[str]:
@@ -266,9 +274,12 @@ def get_universe_options():
             for value in frame[column].dropna()
             if (rating := canonical_rating(value, agency)) is not None
         }
-        issuer_rows = frame[["issuercode", "issuerdescription"]].dropna(
-            subset=["issuercode"]
-        ).drop_duplicates("issuercode").copy()
+        issuer_rows = (
+            frame[["issuercode", "issuerdescription"]]
+            .dropna(subset=["issuercode"])
+            .drop_duplicates("issuercode")
+            .copy()
+        )
         issuers = []
         for row in issuer_rows.itertuples(index=False):
             code = str(row.issuercode)

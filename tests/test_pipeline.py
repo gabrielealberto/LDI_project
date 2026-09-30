@@ -4,6 +4,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pandas as pd
+
 import core.pipeline as pipeline
 from scripts.downloaders.bond_downloader import BondSnapshot
 from scripts.downloaders.yield_curve_downloader import CurveSnapshot
@@ -35,7 +37,7 @@ class PipelineRefreshTests(unittest.TestCase):
             BI_OUTPUT=self.clean_bi,
         )
 
-    def _run_with_mocks(self):
+    def _run_with_mocks(self, audit=None):
         root = Path(self.directory.name)
         actions = []
         bond_downloader = Mock()
@@ -69,12 +71,21 @@ class PipelineRefreshTests(unittest.TestCase):
                 self.matrix.touch(),
             )
         )
-        foi_downloader = Mock(
-            side_effect=lambda: (actions.append("foi"), self.foi.touch())
-        )
-        hicp_downloader = Mock(
-            side_effect=lambda: (actions.append("hicp"), self.hicp.touch())
-        )
+
+        def create_foi():
+            actions.append("foi")
+            pd.DataFrame({"date": ["2026-01-01"], "foi_xt_it": [100.0]}).to_parquet(
+                self.foi, index=False
+            )
+
+        def create_hicp():
+            actions.append("hicp")
+            pd.DataFrame({"date": ["2026-01-01"], "hicp_xt_ea": [100.0]}).to_parquet(
+                self.hicp, index=False
+            )
+
+        foi_downloader = Mock(side_effect=create_foi)
+        hicp_downloader = Mock(side_effect=create_hicp)
         baseline_builder = Mock(
             side_effect=lambda: (actions.append("baseline"), self.baseline.touch())
         )
@@ -96,7 +107,7 @@ class PipelineRefreshTests(unittest.TestCase):
             patch.object(pipeline, "build_inflation_baseline", baseline_builder),
             patch.object(pipeline, "build_cashflow_outputs", cashflow_builder),
         ):
-            completed = pipeline.refresh_ldi_inputs()
+            completed = pipeline.refresh_ldi_inputs(audit=audit)
 
         return actions, completed
 
@@ -105,6 +116,14 @@ class PipelineRefreshTests(unittest.TestCase):
 
         self.assertEqual(
             actions, ["bonds", "curve", "clean", "foi", "hicp", "baseline", "cashflows"]
+        )
+
+    def test_audit_receives_each_completed_stage(self):
+        audit = Mock()
+        _, completed = self._run_with_mocks(audit=audit)
+
+        self.assertEqual(
+            [call.args[0] for call in audit.record_stage.call_args_list], completed
         )
         self.assertEqual(
             completed,

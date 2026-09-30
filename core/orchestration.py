@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
 from pyarrow.parquet import ParquetFile
 
 from .ingestion_support import atomic_write_json

@@ -69,7 +69,9 @@ def _report(progress, message):
         progress(message)
 
 
-def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progress=None):
+def refresh_ldi_inputs(
+    audit=None, parameters=None, universe_filters=None, progress=None
+):
     """Download fresh market data and rebuild every derived LDI input."""
     from .run_config import RunParameters
 
@@ -77,6 +79,11 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
     parameters = parameters or RunParameters()
     completed = []
     clean_bonds = [bond_cleaner.FD_OUTPUT, bond_cleaner.BI_OUTPUT]
+
+    def complete(stage):
+        completed.append(stage)
+        if audit is not None:
+            audit.record_stage(stage)
 
     _report(progress, "Checking the bond market snapshot")
     bond_snapshot = BondDownloader().run()
@@ -105,7 +112,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
             archive_date=str(bond_snapshot.archive_date),
             fallback=bond_snapshot.fallback,
         )
-    completed.append("bond data")
+    complete("bond data")
 
     _report(progress, "Checking the ECB yield-curve snapshot")
     curve_snapshot = ECBDownloader().run()
@@ -128,7 +135,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
             archive_date=str(curve_snapshot.archive_date),
             fallback=curve_snapshot.fallback,
         )
-    completed.append("yield curve")
+    complete("yield curve")
 
     _report(progress, "Preparing the investable bond universe")
     bond_cleaner.run(bond_snapshot.fd_path, bond_snapshot.bi_path)
@@ -136,7 +143,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
     if audit is not None:
         audit.record_output("fd_clean", bond_cleaner.FD_OUTPUT)
         audit.record_output("bi_clean", bond_cleaner.BI_OUTPUT)
-    completed.append("investable universe")
+    complete("investable universe")
 
     _report(progress, "Updating the official inflation indices")
     foi_path = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
@@ -172,7 +179,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
                 pd.read_parquet(hicp_path, columns=["date"]).date.max()
             ),
         )
-    completed.append("inflation indices")
+    complete("inflation indices")
 
     _report(progress, "Building the FOI/HICP inflation baseline")
     if custom_parameters:
@@ -193,7 +200,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
             "inflation_stress_scenarios",
             PROJECT_ROOT / "data" / "config" / "inflation_stress_scenarios.json",
         )
-    completed.append("inflation baseline")
+    complete("inflation baseline")
 
     _report(progress, "Generating contractual bond cash flows")
     cashflow_kwargs = {}
@@ -210,7 +217,7 @@ def refresh_ldi_inputs(audit=None, parameters=None, universe_filters=None, progr
     if audit is not None:
         audit.record_output("bond_cashflows", CASHFLOWS_PATH)
         audit.record_output("bond_cashflow_matrix", BOND_CASHFLOW_MATRIX_PATH)
-    completed.append("bond cash flows")
+    complete("bond cash flows")
 
     return completed
 
