@@ -98,14 +98,16 @@ snapshot, Parquet, manifest, stress test e report Excel.
 Avvio locale con il server WSGI Waitress:
 
 ```powershell
+$env:LDI_WEB_HOST="127.0.0.1"
+$env:LDI_WEB_BROWSER_HOST="127.0.0.1"
 python -m Webapp.server
 ```
 
-Il server apre automaticamente Google Chrome su
-`http://192.168.3.164:5000/`, indirizzo LAN predefinito. Host e porta possono
-essere modificati tramite `LDI_WEB_HOST` e `LDI_WEB_PORT`; per usare un host
-diverso nel browser impostare `LDI_WEB_BROWSER_HOST`. L'apertura automatica si
-disattiva con `LDI_WEB_OPEN_BROWSER=0`.
+Il server apre automaticamente Google Chrome su `http://127.0.0.1:5000/` con
+la configurazione sopra. Host e porta possono essere modificati tramite
+`LDI_WEB_HOST` e `LDI_WEB_PORT`; per usare un host diverso nel browser impostare
+`LDI_WEB_BROWSER_HOST`. L'apertura automatica si disattiva con
+`LDI_WEB_OPEN_BROWSER=0`.
 
 Ogni esecuzione web ha un identificativo persistente e una directory dedicata:
 
