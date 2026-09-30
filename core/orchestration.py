@@ -8,6 +8,7 @@ import inspect
 import socket
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,12 +16,51 @@ from pathlib import Path
 from pyarrow.parquet import ParquetFile
 
 from .ingestion_support import atomic_write_json
+from .processes import is_process_alive
 from .utils import PROCESSED_DIR
 
 
 LOCK_PATH = PROCESSED_DIR / ".ldi-run.lock"
 MANIFEST_PATH = PROCESSED_DIR / "run_manifest.json"
 MANIFEST_ARCHIVE_DIR = PROCESSED_DIR / "run_manifests"
+LOCK_INITIALIZATION_GRACE_SECONDS = 30
+
+
+def pipeline_lock_active(path: Path = LOCK_PATH) -> bool:
+    """Return whether a pipeline lock belongs to a live local process.
+
+    A lock written by a process that crashed cannot remove itself.  Its owner
+    metadata lets a later invocation recover it without unlocking a live run.
+    """
+    path = Path(path)
+    try:
+        metadata = dict(
+            line.split("=", 1)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        pid = int(metadata.get("pid", ""))
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        try:
+            age_seconds = time.time() - path.stat().st_mtime
+        except FileNotFoundError:
+            return False
+        if age_seconds < LOCK_INITIALIZATION_GRACE_SECONDS:
+            return True
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return False
+    if metadata.get("host") != socket.gethostname() or is_process_alive(pid):
+        return True
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    return False
 
 
 def _sha256(path: Path) -> str:
@@ -209,12 +249,16 @@ class RunLock:
 
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self.handle = self.path.open("x", encoding="utf-8")
-        except FileExistsError as error:
-            raise RuntimeError(
-                f"Another LDI run is active; remove {self.path} only after verifying it is stale."
-            ) from error
+        while True:
+            try:
+                self.handle = self.path.open("x", encoding="utf-8")
+                break
+            except FileExistsError as error:
+                if not pipeline_lock_active(self.path):
+                    continue
+                raise RuntimeError(
+                    f"Another LDI run is active; remove {self.path} only after verifying it is stale."
+                ) from error
         self.handle.write(f"pid={os.getpid()}\nhost={socket.gethostname()}\n")
         self.handle.flush()
         return self

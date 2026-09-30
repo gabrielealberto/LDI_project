@@ -6,11 +6,10 @@ import os
 import subprocess
 import sys
 import uuid
-from pathlib import Path
 from threading import RLock
 
 from core.ingestion_support import atomic_write_json
-from core.orchestration import LOCK_PATH
+from core.orchestration import LOCK_PATH, pipeline_lock_active
 from core.utils import PROCESSED_DIR
 
 from .repository import PROJECT_ROOT, RunRepository, utc_now
@@ -33,7 +32,7 @@ class RunService:
         active = self.repository.active()
         if active is not None:
             raise RunConflict(f"Run {active['run_id']} is already {active['status']}.")
-        if Path(LOCK_PATH).exists():
+        if pipeline_lock_active(LOCK_PATH):
             raise RunConflict("The desktop LDI pipeline is already running.")
         excel_path = PROCESSED_DIR / "ldi_optimization.xlsx"
         if excel_path.exists():

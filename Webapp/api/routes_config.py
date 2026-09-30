@@ -14,7 +14,7 @@ from core.future_liabilities import Liability, _payment_dates
 from core.run_config import RunParameters
 from core.inflation_stress import InflationShock
 from core.ingestion_support import atomic_write_json
-from core.orchestration import LOCK_PATH
+from core.orchestration import LOCK_PATH, pipeline_lock_active
 from core.utils import CONFIG_DIR, INFLATION_BASELINE_PATH
 
 
@@ -45,7 +45,7 @@ def _ensure_not_running():
             ),
             409,
         )
-    if Path(LOCK_PATH).exists():
+    if pipeline_lock_active(LOCK_PATH):
         return (
             jsonify({"error": "Configuration is locked by the desktop pipeline."}),
             409,

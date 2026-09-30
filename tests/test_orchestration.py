@@ -1,9 +1,12 @@
 import json
+import os
+import socket
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from core.orchestration import RunLock, execute_with_manifest
+from core.orchestration import RunLock, execute_with_manifest, pipeline_lock_active
 
 
 class OrchestrationTests(unittest.TestCase):
@@ -66,3 +69,28 @@ class OrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Another LDI run"):
                     with RunLock(lock):
                         pass
+
+    def test_stale_local_lock_is_removed_before_a_new_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "run.lock"
+            lock.write_text(
+                f"pid=12345\nhost={socket.gethostname()}\n",
+                encoding="utf-8",
+            )
+
+            with patch("core.orchestration.is_process_alive", return_value=False):
+                self.assertFalse(pipeline_lock_active(lock))
+
+            self.assertFalse(lock.exists())
+            with RunLock(lock):
+                self.assertTrue(lock.exists())
+
+    def test_stale_incomplete_lock_is_removed_after_initialization_grace_period(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "run.lock"
+            lock.write_text("", encoding="utf-8")
+            old_timestamp = lock.stat().st_mtime - 31
+            os.utime(lock, (old_timestamp, old_timestamp))
+
+            self.assertFalse(pipeline_lock_active(lock))
+            self.assertFalse(lock.exists())

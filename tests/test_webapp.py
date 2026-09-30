@@ -170,10 +170,38 @@ class WebAppTests(unittest.TestCase):
         with (
             patch("Webapp.service.PROCESSED_DIR", self.storage),
             patch("Webapp.service.subprocess.Popen", return_value=process),
+            patch("Webapp.repository.is_process_alive", return_value=True),
         ):
             RunService(repository).start({})
             with self.assertRaisesRegex(RuntimeError, "already queued"):
                 RunService(repository).start({})
+
+    def test_abandoned_run_is_marked_as_error_and_does_not_block_a_new_run(self):
+        repository = RunRepository(self.storage)
+        repository.create("abandoned-run")
+        repository.update("abandoned-run", status="running", pid=12345)
+        process = Mock(pid=67890)
+        with (
+            patch("Webapp.service.PROCESSED_DIR", self.storage),
+            patch("Webapp.service.subprocess.Popen", return_value=process),
+            patch("Webapp.repository.is_process_alive", return_value=False),
+        ):
+            record = RunService(repository).start({})
+        abandoned = repository.get("abandoned-run")
+        self.assertEqual(record["status"], "queued")
+        self.assertEqual(abandoned["status"], "error")
+        self.assertIsNotNone(abandoned["completed_at"])
+        self.assertIn("no longer running", abandoned["error"])
+
+    def test_queued_run_without_a_worker_pid_is_marked_as_abandoned(self):
+        repository = RunRepository(self.storage)
+        repository.create("unlaunched-run")
+
+        self.assertIsNone(repository.active())
+
+        record = repository.get("unlaunched-run")
+        self.assertEqual(record["status"], "error")
+        self.assertIn("no longer running", record["error"])
 
     def test_result_endpoints_survive_application_restart(self):
         repository = self.app.extensions["run_repository"]

@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from core.processes import is_process_alive
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STORAGE_DIR = PROJECT_ROOT / "data" / "webapp"
@@ -115,15 +117,33 @@ class RunRepository:
         return dict(row) if row else None
 
     def active(self) -> dict | None:
+        """Return an active run, marking abandoned worker records as errors."""
         with self._connect() as connection:
-            row = connection.execute(
+            rows = connection.execute(
                 """
                 SELECT * FROM runs
                 WHERE status IN ('queued', 'running')
-                ORDER BY created_at DESC LIMIT 1
+                ORDER BY created_at DESC
                 """
-            ).fetchone()
-        return dict(row) if row else None
+            ).fetchall()
+            for row in rows:
+                record = dict(row)
+                if is_process_alive(record["pid"]):
+                    return record
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = ?, completed_at = ?, error = ?
+                    WHERE run_id = ? AND status IN ('queued', 'running')
+                    """,
+                    (
+                        "error",
+                        utc_now(),
+                        "Worker process is no longer running; run was marked as abandoned.",
+                        record["run_id"],
+                    ),
+                )
+        return None
 
     def list(self, limit: int = 50) -> list[dict]:
         limit = max(1, min(int(limit), 200))
