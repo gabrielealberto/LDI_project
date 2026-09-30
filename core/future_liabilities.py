@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 
 from . import yield_curve
-from .utils import CONFIG_DIR
+from .utils import (
+    CONFIG_DIR,
+    LIABILITY_END_DATE_INCLUSIVE,
+    LIABILITY_PAYMENT_TIMING,
+)
 
 LIABILITIES_PATH = CONFIG_DIR / "liabilities.json"
 
@@ -39,42 +43,73 @@ class Liability:
         self.indexation = indexation
 
 
+def _payment_dates(
+    liability,
+    timing=LIABILITY_PAYMENT_TIMING,
+    end_date_inclusive=LIABILITY_END_DATE_INCLUSIVE,
+):
+    """Build contractual dates from the documented liability schedule policy."""
+    if timing not in {"period_start", "period_end"}:
+        raise ValueError("Liability payment timing must be period_start or period_end.")
+    start = pd.Timestamp(liability.start_date).replace(day=1)
+    end = pd.Timestamp(liability.end_date).replace(day=1)
+    if end < start:
+        raise ValueError("Liability end_date must not precede start_date.")
+    if not end_date_inclusive:
+        end -= pd.DateOffset(months=1)
+
+    interval = 1 if liability.frequency == "annual" else liability.interval_years
+    if liability.frequency not in {"annual", "every_n_years"}:
+        return pd.DatetimeIndex([])
+    if interval is None or int(interval) != interval or interval <= 0:
+        raise ValueError("Liability interval_years must be a positive integer.")
+
+    periods = pd.date_range(start=start, end=end, freq="MS")
+    periods = periods[
+        ((periods.year - start.year) % int(interval) == 0)
+        & (periods.month == start.month)
+    ]
+    if timing == "period_start":
+        return periods
+    return pd.DatetimeIndex(
+        [
+            period + pd.DateOffset(years=int(interval)) - pd.Timedelta(days=1)
+            for period in periods
+        ]
+    )
+
+
 class Cf_engine:
     def __init__(self, liability):
         self.liability = liability
 
     def to_cf(self, index_provider=None):
-        dates = pd.date_range(
-            start=self.liability.start_date,
-            end=self.liability.end_date - pd.DateOffset(months=1),
-            freq="MS",
-        )
+        dates = _payment_dates(self.liability)
         cf = np.zeros(len(dates))
         if self.liability.frequency in {"annual", "every_n_years"}:
-            interval = 1 if self.liability.frequency == "annual" else self.liability.interval_years
-            mask = dates.month == self.liability.start_date.month
             years_elapsed = dates.year - self.liability.start_date.year
-            mask &= years_elapsed % interval == 0
             if self.liability.indexation:
                 if index_provider is None:
                     raise ValueError(
-                        "An index provider is required for scenario-indexed liabilities."
+                        "An index provider is required for inflation-indexed liabilities."
                     )
                 terms = self.liability.indexation
-                anchor = pd.Timestamp(terms.get("base_reference_date", self.liability.start_date))
+                anchor = pd.Timestamp(
+                    terms.get("base_reference_date", self.liability.start_date)
+                )
                 lag = int(terms.get("observation_lag_months", 0))
                 base = index_provider.reference_level(terms["index_id"], anchor, lag)
-                cf[mask] = [
+                cf[:] = [
                     self.liability.initial_cashflow
                     * index_provider.reference_level(terms["index_id"], date, lag)
                     / base
                     * self.liability.probability
-                    for date in dates[mask]
+                    for date in dates
                 ]
             else:
-                cf[mask] = (
+                cf[:] = (
                     self.liability.initial_cashflow
-                    * (1 + self.liability.inflation_rate) ** years_elapsed[mask]
+                    * (1 + self.liability.inflation_rate) ** years_elapsed
                     * self.liability.probability
                 )
         return dates, cf
@@ -92,20 +127,21 @@ class LiabilityPortfolio:
         self.valuation_date = valuation_date
 
     def merge_liabilities(self, index_provider=None):
-        if index_provider is None and any(e.liability.indexation for e in self.liabilities):
-            from .inflation_linked_cashflows import load_selected_index_provider
+        if index_provider is None and any(
+            e.liability.indexation for e in self.liabilities
+        ):
+            from .inflation_linked_cashflows import load_baseline_index_provider
 
-            index_provider = load_selected_index_provider()
+            index_provider = load_baseline_index_provider()
         cf_pairs = [e.to_cf(index_provider=index_provider) for e in self.liabilities]
-        common_dates = pd.date_range(
-            start=min(e.liability.start_date for e in self.liabilities),
-            end=max(e.liability.end_date for e in self.liabilities) - pd.DateOffset(months=1),
-            freq="MS",
-        )
         all_dates = np.concatenate([d.to_numpy() for d, _ in cf_pairs])
+        # The optimiser works on monthly buckets. Keep the contractual dates
+        # above for indexation, then map each payment to its calendar month.
+        all_months = pd.DatetimeIndex(all_dates).to_period("M").to_timestamp()
+        common_dates = pd.date_range(all_months.min(), all_months.max(), freq="MS")
         all_cf = np.concatenate([c for _, c in cf_pairs])
 
-        idx = common_dates.get_indexer(all_dates)
+        idx = common_dates.get_indexer(all_months)
         cf = np.zeros(len(common_dates))
         np.add.at(cf, idx, all_cf)
         return common_dates, cf
@@ -114,7 +150,7 @@ class LiabilityPortfolio:
         dates, cf = self.merge_liabilities(index_provider=index_provider)
         t = ((dates - self.valuation_date) / pd.Timedelta(days=365.25)).to_numpy()
         params = yield_curve.load_svensson_params(
-            yield_curve.CSV_PATH, yield_curve.curves["All bonds"]
+            yield_curve.latest_curve_path(), yield_curve.curves["All bonds"]
         )
         rates = yield_curve.svensson_yield(t, *params) / 100
         dcf = cf / (1 + rates) ** t
@@ -125,27 +161,16 @@ class LiabilityPortfolio:
         return np.sum(t * dcf) / pv
 
 
-portfolio = LiabilityPortfolio(
-    [Cf_engine(liability) for liability in load_liabilities()], dt.datetime.today()
-)
-
-
-def scenario_cashflows(scenario=None):
-    """Return FOI-indexed liabilities under the active or explicitly selected scenario."""
-    from .inflation_linked_cashflows import load_selected_index_provider
-
-    provider = load_selected_index_provider(**({} if scenario is None else {"scenario": scenario}))
+def cashflows_for_provider(index_provider):
+    """Return all configured liabilities using one explicit index provider."""
     dynamic_portfolio = LiabilityPortfolio(
         [Cf_engine(liability) for liability in load_liabilities()], dt.datetime.today()
     )
-    return dynamic_portfolio.merge_liabilities(index_provider=provider)
+    return dynamic_portfolio.merge_liabilities(index_provider=index_provider)
 
 
-if __name__ == "__main__":
-    dcf, pv, t, dates = portfolio.pv()
-    duration = np.sum(t * dcf) / pv
-    print(f"PV:                {pv:>14,.2f}")
-    print(f"Duration:          {duration:>14.3f}")
-    for date, dcf_i in zip(dates, dcf):
-        if dcf_i != 0:
-            print(f"  {date.date()}   dcf: {dcf_i:>10,.2f}")
+def baseline_cashflows():
+    """Return FOI-indexed liabilities under the sole forecast baseline."""
+    from .inflation_linked_cashflows import load_baseline_index_provider
+
+    return cashflows_for_provider(load_baseline_index_provider())

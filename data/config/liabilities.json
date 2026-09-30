@@ -1,32 +1,32 @@
 [
   {
-    "name": "Annual liability 2028-2042",
     "category": "liability",
-    "start_date": "2028-01-01",
     "end_date": "2042-01-01",
-    "initial_cashflow": 18000,
     "frequency": "annual",
-    "inflation_rate": 0.025,
     "indexation": {
-      "index_id": "FOI_XT_IT",
       "base_reference_date": "2028-01-01",
+      "index_id": "FOI_XT_IT",
       "observation_lag_months": 0
     },
-    "probability": 1
+    "inflation_rate": 0.025,
+    "initial_cashflow": 18000,
+    "name": "Annual liability 2028-2042",
+    "probability": 1,
+    "start_date": "2028-01-01"
   },
   {
-    "name": "Annual liability 2028-2046",
     "category": "liability",
-    "start_date": "2028-01-01",
     "end_date": "2046-01-01",
-    "initial_cashflow": 18000,
     "frequency": "annual",
-    "inflation_rate": 0.025,
     "indexation": {
-      "index_id": "FOI_XT_IT",
       "base_reference_date": "2028-01-01",
+      "index_id": "FOI_XT_IT",
       "observation_lag_months": 0
     },
-    "probability": 1
+    "inflation_rate": 0.025,
+    "initial_cashflow": 18000,
+    "name": "Annual liability 2028-2046",
+    "probability": 1,
+    "start_date": "2028-01-01"
   }
 ]

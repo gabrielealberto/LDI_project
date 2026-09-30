@@ -48,3 +48,4 @@ data/processed/*
 !data/processed/plots/
 data/processed/plots/*
 !data/processed/plots/.gitkeep
+data/webapp/

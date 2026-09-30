@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-from core.ldi_engine import export_ldi_excel, export_ldi_excel_legacy
+from core.ldi_engine import export_ldi_excel
 
 
 class ExcelExportTests(unittest.TestCase):
@@ -44,6 +44,15 @@ class ExcelExportTests(unittest.TestCase):
             "max_issuer_weight": 0.4,
             "max_positions": 30,
             "coupon_tax_rate": 0.125,
+            "capital_gain_tax_rate": 0.125,
+            "tax_breakdown": pd.DataFrame(
+                {
+                    "year": [2028, 2030],
+                    "coupon_taxes_eur": [5.0, 0.0],
+                    "capital_gain_taxes_eur": [0.0, 1.25],
+                    "total_taxes_eur": [5.0, 1.25],
+                }
+            ),
             "solver_mip_gap": 0.0,
             "solver_objective": 0.0,
             "status": "Optimal",
@@ -67,20 +76,15 @@ class ExcelExportTests(unittest.TestCase):
                 "Portfolio",
                 "Cash Flow Profile",
                 "Annual Overview",
+                "Payed taxes",
                 "Methodology & Controls",
             ],
         )
         self.assertEqual(workbook["Client Summary"]["A1"].value, "LDI Portfolio")
         self.assertGreaterEqual(len(workbook["Client Summary"]._charts), 2)
         self.assertGreaterEqual(len(workbook["Annual Overview"]._charts), 2)
-
-    def test_legacy_export_remains_available(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = export_ldi_excel_legacy(self.result, Path(directory) / "legacy.xlsx")
-            workbook = load_workbook(output)
-
-        self.assertEqual(workbook.sheetnames, ["Summary", "Purchase plan", "Monthly cash flows"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(workbook["Payed taxes"]["A5"].value, 2028)
+        self.assertEqual(workbook["Payed taxes"]["C6"].value, 1.25)
+        self.assertNotIn(
+            "Selection reason", [cell.value for cell in workbook["Portfolio"][4]]
+        )

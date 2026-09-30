@@ -13,7 +13,44 @@ BI_INPUT = RAW_DIR / "bonds_bi.parquet"
 FD_OUTPUT = PROCESSED_DIR / "fd_clean.parquet"
 BI_OUTPUT = PROCESSED_DIR / "bi_clean.parquet"
 LIQUID_PRICE_TYPES = frozenset({"LP"})
+# Require a meaningful daily nominal volume, rather than admitting an
+# isolated EUR 1,000 print as evidence of reliable execution liquidity.
 MIN_DAILY_BOND_VOLUME = 20_000
+
+RATING_ORDER = (
+    "AAA", "AA+", "AA", "AA-", "A+", "A", "A-",
+    "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-",
+    "B+", "B", "B-", "CCC", "CC", "C", "D",
+)
+RATING_SCORE = {rating: score for score, rating in enumerate(RATING_ORDER)}
+MOODYS_TO_CANONICAL = {
+    "AAA": "AAA", "AA1": "AA+", "AA2": "AA", "AA3": "AA-",
+    "A1": "A+", "A2": "A", "A3": "A-",
+    "BAA1": "BBB+", "BAA2": "BBB", "BAA3": "BBB-",
+    "BA1": "BB+", "BA2": "BB", "BA3": "BB-",
+    "B1": "B+", "B2": "B", "B3": "B-",
+    "CAA1": "CCC", "CAA2": "CC", "CAA3": "CC", "CA": "C", "C": "D",
+}
+MINIMUM_CLEANING_RATING = "BBB-"
+
+
+def canonical_rating(value, agency="sp"):
+    normalized = str(value).strip().upper() if pd.notna(value) else ""
+    if not normalized:
+        return None
+    if agency == "moodys":
+        return MOODYS_TO_CANONICAL.get(normalized)
+    return normalized if normalized in RATING_SCORE else None
+
+
+def effective_rating(row):
+    """Return the worst recognized rating available for one bond."""
+    ratings = [
+        canonical_rating(row.get("ratingsp"), "sp"),
+        canonical_rating(row.get("ratingmoodys"), "moodys"),
+    ]
+    ratings = [rating for rating in ratings if rating is not None]
+    return RATING_ORDER[max(RATING_SCORE[rating] for rating in ratings)] if ratings else None
 
 
 def liquid_bonds(
@@ -33,7 +70,9 @@ def liquid_bonds(
     try:
         threshold = float(min_daily_volume)
     except (TypeError, ValueError) as error:
-        raise ValueError("min_daily_volume must be a finite non-negative number") from error
+        raise ValueError(
+            "min_daily_volume must be a finite non-negative number"
+        ) from error
     if not math.isfinite(threshold) or threshold < 0:
         raise ValueError("min_daily_volume must be a finite non-negative number")
 
@@ -57,12 +96,21 @@ def clean_fd(df, min_daily_volume=MIN_DAILY_BOND_VOLUME):
     cleaned = cleaned[~cleaned["issuercode"].eq("SOV_BEI")]
     report["no_bei"] = len(cleaned)
 
-    low_sp = cleaned["ratingsp"].fillna("").astype(str).eq("BBB-")
-    low_moodys = cleaned["ratingmoodys"].fillna("").astype(str).eq("Baa3")
-    cleaned = cleaned[~(low_sp | low_moodys)]
+    floor_score = RATING_SCORE[MINIMUM_CLEANING_RATING]
+    sp_score = cleaned["ratingsp"].map(lambda value: RATING_SCORE.get(canonical_rating(value, "sp"), -1))
+    moodys_score = cleaned["ratingmoodys"].map(
+        lambda value: RATING_SCORE.get(canonical_rating(value, "moodys"), -1)
+    )
+    # BBB- is the minimum admitted rating; BB+ and lower are excluded.
+    cleaned = cleaned[(sp_score < 0) | (sp_score <= floor_score)]
+    moodys_score = moodys_score.loc[cleaned.index]
+    sp_score = sp_score.loc[cleaned.index]
+    cleaned = cleaned[(moodys_score < 0) | (moodys_score <= floor_score)]
     report["rating"] = len(cleaned)
 
-    has_sp = cleaned["ratingsp"].notna() & cleaned["ratingsp"].astype(str).str.strip().ne("")
+    has_sp = cleaned["ratingsp"].notna() & cleaned["ratingsp"].astype(
+        str
+    ).str.strip().ne("")
     has_moodys = cleaned["ratingmoodys"].notna() & cleaned["ratingmoodys"].astype(
         str
     ).str.strip().ne("")
@@ -95,9 +143,29 @@ def clean_bi(df, fd_clean):
     return cleaned.reset_index(drop=True)
 
 
-def run():
-    fd = pd.read_parquet(FD_INPUT)
-    bi = pd.read_parquet(BI_INPUT)
+def apply_universe_filters(fd, bi, allowed_ratings=None, allowed_issuers=None):
+    """Apply per-run rating and issuer filters without changing canonical clean data."""
+    filtered = fd.copy()
+    if allowed_ratings is not None:
+        allowed = {
+            canonical_rating(value, "sp") or str(value).strip().upper()
+            for value in allowed_ratings
+        }
+        effective = filtered.apply(effective_rating, axis=1)
+        filtered = filtered.loc[effective.isin(allowed)].copy()
+    if allowed_issuers is not None:
+        allowed = {str(value).strip() for value in allowed_issuers}
+        filtered = filtered.loc[filtered["issuercode"].astype(str).isin(allowed)].copy()
+
+    valid_isins = filtered["isincode"].dropna().unique()
+    filtered_bi = bi.loc[bi["isincode"].isin(valid_isins)].copy()
+    return filtered.reset_index(drop=True), filtered_bi.reset_index(drop=True)
+
+
+def run(fd_input=FD_INPUT, bi_input=BI_INPUT):
+    """Clean an explicit immutable raw snapshot into the current universe."""
+    fd = pd.read_parquet(fd_input)
+    bi = pd.read_parquet(bi_input)
 
     fd_clean, report = clean_fd(fd)
     bi_clean = clean_bi(bi, fd_clean)
@@ -122,23 +190,3 @@ def run():
         "fd_output": FD_OUTPUT,
         "bi_output": BI_OUTPUT,
     }
-
-
-if __name__ == "__main__":
-    result = run()
-    report = result["fd"]
-
-    print(f"bonds_bi.parquet loaded: {result['bi_rows']} rows")
-    print("bonds_fd.parquet:")
-    print(f"  initial:           {report['initial']}")
-    print(f"  EUR only:          {report['eur']}")
-    print(f"  GOV/SOV only:      {report['government']}")
-    print(f"  excluding SOV_BEI: {report['no_bei']}")
-    print(f"  rating filter:     {report['rating']}")
-    print(f"  with a rating:     {report['rated']}")
-    print(f"  minimumlot <=1000: {report['minimumlot']}")
-    print(f"  liquid market data: {report['liquid']}")
-    print(f"  maturity >= 1y:    {report['maturity_1y']}")
-    print(f"\nSaved: {result['fd_output']}")
-    print(f"Filtered bonds_bi.parquet: {result['bi_clean_rows']} rows")
-    print(f"Saved: {result['bi_output']}")

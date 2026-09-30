@@ -1,21 +1,23 @@
 """Refresh every local input required by the monthly LDI engine."""
 
 import logging
+from datetime import date
 
 import pandas as pd
 
 from .bond_cash_flow_creator import build_cashflow_outputs
-from .inflation_scenarios import main as build_inflation_scenarios
+from .inflation_baseline import write_baseline as build_inflation_baseline
 from scripts.cleaners import bond_cleaner
 from scripts.downloaders.bond_downloader import BondDownloader
-from scripts.downloaders.download_foi_xt_it import main as download_foi
-from scripts.downloaders.download_hicp_xt_ea import main as download_hicp
+from scripts.downloaders.download_foi_xt_it import download_foi_series as download_foi
+from scripts.downloaders.download_hicp_xt_ea import (
+    download_hicp_series as download_hicp,
+)
 from scripts.downloaders.yield_curve_downloader import ECBDownloader
 from .utils import (
     BOND_CASHFLOWS_PATH,
     BOND_CASHFLOW_MATRIX_PATH,
-    CURVE_PATH,
-    INFLATION_SCENARIOS_PATH,
+    INFLATION_BASELINE_PATH,
     PROJECT_ROOT,
 )
 
@@ -62,31 +64,97 @@ def _usable_cached_monthly_index(path, value_column, max_age_months=2):
     return latest >= minimum
 
 
-def refresh_ldi_inputs():
+def _report(progress, message):
+    if progress is not None:
+        progress(message)
+
+
+def refresh_ldi_inputs(
+    audit=None, parameters=None, universe_filters=None, progress=None
+):
     """Download fresh market data and rebuild every derived LDI input."""
+    from .run_config import RunParameters
+
+    custom_parameters = parameters is not None
+    parameters = parameters or RunParameters()
     completed = []
-    raw_bonds = [bond_cleaner.FD_INPUT, bond_cleaner.BI_INPUT]
     clean_bonds = [bond_cleaner.FD_OUTPUT, bond_cleaner.BI_OUTPUT]
 
-    BondDownloader().run()
-    _require_outputs(raw_bonds, "bond download")
-    completed.append("bond data")
+    def complete(stage):
+        completed.append(stage)
+        if audit is not None:
+            audit.record_stage(stage)
 
-    ECBDownloader().run()
-    _require_outputs([CURVE_PATH], "yield-curve download")
-    completed.append("yield curve")
+    _report(progress, "Checking the bond market snapshot")
+    bond_snapshot = BondDownloader().run()
+    _require_outputs([bond_snapshot.fd_path, bond_snapshot.bi_path], "bond download")
+    if bond_snapshot.fallback:
+        logging.warning(
+            "The investable universe uses a fallback bond snapshot from %s.",
+            bond_snapshot.archive_date,
+        )
+        if audit is not None:
+            audit.record_fallback(
+                "bond_market",
+                archive_date=str(bond_snapshot.archive_date),
+                age_days=(date.today() - bond_snapshot.archive_date).days,
+            )
+    if audit is not None:
+        audit.record_input(
+            "bond_fd",
+            bond_snapshot.fd_path,
+            archive_date=str(bond_snapshot.archive_date),
+            fallback=bond_snapshot.fallback,
+        )
+        audit.record_input(
+            "bond_bi",
+            bond_snapshot.bi_path,
+            archive_date=str(bond_snapshot.archive_date),
+            fallback=bond_snapshot.fallback,
+        )
+    complete("bond data")
 
-    bond_cleaner.run()
+    _report(progress, "Checking the ECB yield-curve snapshot")
+    curve_snapshot = ECBDownloader().run()
+    _require_outputs([curve_snapshot.path], "yield-curve download")
+    if curve_snapshot.fallback:
+        logging.warning(
+            "The valuation utilities use a fallback ECB curve snapshot from %s.",
+            curve_snapshot.archive_date,
+        )
+        if audit is not None:
+            audit.record_fallback(
+                "yield_curve",
+                archive_date=str(curve_snapshot.archive_date),
+                age_days=(date.today() - curve_snapshot.archive_date).days,
+            )
+    if audit is not None:
+        audit.record_input(
+            "yield_curve",
+            curve_snapshot.path,
+            archive_date=str(curve_snapshot.archive_date),
+            fallback=curve_snapshot.fallback,
+        )
+    complete("yield curve")
+
+    _report(progress, "Preparing the investable bond universe")
+    bond_cleaner.run(bond_snapshot.fd_path, bond_snapshot.bi_path)
     _require_outputs(clean_bonds, "bond cleaning")
-    completed.append("investable universe")
+    if audit is not None:
+        audit.record_output("fd_clean", bond_cleaner.FD_OUTPUT)
+        audit.record_output("bi_clean", bond_cleaner.BI_OUTPUT)
+    complete("investable universe")
 
+    _report(progress, "Updating the official inflation indices")
     foi_path = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
     hicp_path = PROJECT_ROOT / "data" / "hicp_xt_ea.parquet"
-    if _usable_cached_monthly_index(foi_path, "foi_xt_it"):
+    foi_cached = _usable_cached_monthly_index(foi_path, "foi_xt_it")
+    hicp_cached = _usable_cached_monthly_index(hicp_path, "hicp_xt_ea")
+    if foi_cached:
         logging.info("FOI cache is current; download skipped.")
     else:
         download_foi()
-    if _usable_cached_monthly_index(hicp_path, "hicp_xt_ea"):
+    if hicp_cached:
         logging.info("HICP cache is current; download skipped.")
     else:
         download_hicp()
@@ -94,18 +162,62 @@ def refresh_ldi_inputs():
         [foi_path, hicp_path],
         "inflation-index download",
     )
-    completed.append("inflation indices")
+    if audit is not None:
+        audit.record_input(
+            "foi",
+            foi_path,
+            cache_reused=foi_cached,
+            last_observation=str(
+                pd.read_parquet(foi_path, columns=["date"]).date.max()
+            ),
+        )
+        audit.record_input(
+            "hicp",
+            hicp_path,
+            cache_reused=hicp_cached,
+            last_observation=str(
+                pd.read_parquet(hicp_path, columns=["date"]).date.max()
+            ),
+        )
+    complete("inflation indices")
 
-    build_inflation_scenarios()
-    _require_outputs([INFLATION_SCENARIOS_PATH], "inflation-scenario generation")
-    completed.append("inflation scenarios")
+    _report(progress, "Building the FOI/HICP inflation baseline")
+    if custom_parameters:
+        build_inflation_baseline(parameters.baseline_config())
+    else:
+        build_inflation_baseline()
+    _require_outputs([INFLATION_BASELINE_PATH], "inflation-baseline generation")
+    if audit is not None:
+        audit.record_input("inflation_baseline", INFLATION_BASELINE_PATH)
+        audit.record_configuration(
+            "liabilities", PROJECT_ROOT / "data" / "config" / "liabilities.json"
+        )
+        audit.record_configuration(
+            "inflation_linked_bonds",
+            PROJECT_ROOT / "data" / "config" / "inflation_linked_bonds.json",
+        )
+        audit.record_configuration(
+            "inflation_stress_scenarios",
+            PROJECT_ROOT / "data" / "config" / "inflation_stress_scenarios.json",
+        )
+    complete("inflation baseline")
 
-    build_cashflow_outputs()
+    _report(progress, "Generating contractual bond cash flows")
+    cashflow_kwargs = {}
+    if universe_filters is not None:
+        cashflow_kwargs["universe_filters"] = universe_filters
+    if custom_parameters:
+        build_cashflow_outputs(nominal=parameters.nominal, **cashflow_kwargs)
+    else:
+        build_cashflow_outputs(**cashflow_kwargs)
     _require_outputs(
         [CASHFLOWS_PATH, BOND_CASHFLOW_MATRIX_PATH],
         "bond cash-flow generation",
     )
-    completed.append("bond cash flows")
+    if audit is not None:
+        audit.record_output("bond_cashflows", CASHFLOWS_PATH)
+        audit.record_output("bond_cashflow_matrix", BOND_CASHFLOW_MATRIX_PATH)
+    complete("bond cash flows")
 
     return completed
 
