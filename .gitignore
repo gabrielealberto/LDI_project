@@ -62,6 +62,9 @@ data/processed/*
 !data/processed/plots/
 data/processed/plots/*
 !data/processed/plots/.gitkeep
+<<<<<<< HEAD
 
 # Web app runtime state and generated run artifacts
+=======
+>>>>>>> 42af8f0d18c0a856ca7b68a5a96fd0efd8c5ce46
 data/webapp/

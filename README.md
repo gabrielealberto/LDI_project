@@ -1,207 +1,290 @@
-# LDI Portfolio Engine
+# LDI cash-flow matching
 
-An end-to-end Python workflow for building a euro-denominated bond portfolio
-that matches a schedule of future liabilities on a monthly basis. It downloads
-market data, prepares an investable sovereign-bond universe, creates per-lot
-cash flows, and solves an integer LDI portfolio.
+Workflow Python per costruire un portafoglio obbligazionario che copra una
+schedule di passività future mensili. Il progetto scarica dati ufficiali e di
+mercato, li valida, costruisce i cash flow, risolve un problema MILP e produce
+Excel e audit Parquet. I grafici sono generati soltanto dall'entry point
+dedicato.
 
-It is intended for research, prototyping, and transparent cash-flow analysis.
-It is not investment, tax, or legal advice.
+Il progetto è pensato per un’esecuzione batch schedulata. `main.py` resta
+compatibile come entry point interattivo; per l’esecuzione operativa usare
+`scripts/run_ldi.py`.
 
-## Features
+## Architettura
 
-- Downloads and cleans a sovereign-bond universe with traded prices and a
-  configurable minimum daily volume.
-- Generates gross and coupon-tax-adjusted cash flows for EUR 1,000 bond lots.
-- Matches monthly liabilities with integer lots, issuer and position limits.
-- Solves the final MILP on the complete eligible universe without candidate pruning.
-- Includes the broker purchase commission in selection, cost, ROI, and XIRR.
-- Carries earlier bond cash flows into later monthly liabilities.
-- Reports any external funding need explicitly as `uncovered_eur`.
-- Exports an Excel audit trail, a three-chart analytical dashboard, and a
-  square presentation graphic designed for LinkedIn.
-- Defines liabilities in JSON, without editing Python source.
-- Uses one selected coherent FOI/HICP scenario for inflation-linked assets and
-  Italian inflation-indexed liabilities.
+```text
+Scheduler
+    |
+    v
+scripts/run_ldi.py
+    |
+    +-- lock esclusivo anti-concorrenza
+    +-- manifest di esecuzione
+    +-- main.py
+           |
+           +-- ingestion dati esterni
+           |     +-- bond market data
+           |     +-- curva ECB Svensson
+           |     +-- FOI ISTAT
+           |     +-- HICP Eurostat
+           |
+           +-- validazione e pulizia
+           +-- cash flow generation
+           +-- MILP cash-flow matching
+           +-- stress test ed Excel
+```
 
-## Repository structure
+La generazione dei grafici è separata dalla pipeline ordinaria ed è avviata
+esplicitamente tramite `plot.py`.
 
-| Path | Purpose |
-| --- | --- |
-| `data/config/` | Versioned liability, inflation-linked, and contractual cash-flow configuration. |
-| `data/raw/` | Local source-data cache, ignored by Git. |
-| `data/processed/` | Local clean data, reports, and charts, ignored by Git. |
-| `scripts/downloaders/` | Market-data download commands. |
-| `scripts/cleaners/` | Investable-universe preparation command. |
-| `core/ldi_engine.py` | Official monthly integer cash-flow-matching optimizer. |
-| `main.py` | Canonical workflow: prepares inputs, solves, and exports the result. |
-| `core/pipeline.py` | Refreshes all market inputs for the official workflow. |
-| `core/bond_cash_flow_creator.py` | Cash-flow generation and yield validation. |
-| `core/future_liabilities.py` | Liability configuration and aggregation. |
-| `core/inflation_scenarios.py` | Builds coherent FOI/HICP scenario paths. |
-| `core/inflation_linked_cashflows.py` | Contractual FOI/HICP scenario cash flows for BTP€i, BTP Italia, and BTP Italia Sì. |
-| `core/plots.py` | PNG dashboard generation for the monthly LDI result. |
-| `core/utils.py` | Shared project paths, mandate defaults, and numerical helpers. |
-| `tests/` | Fast, deterministic regression tests. |
+I downloader condividono primitive operative in
+`core/ingestion_support.py`:
 
-## Requirements
+- retry HTTP con exponential backoff per errori transitori;
+- timeout espliciti;
+- scrittura Parquet atomica tramite file temporaneo e replace;
+- nessuna pubblicazione di file parziali.
 
-- Python 3.11 (the version exercised by CI and the pinned dependencies).
-- Internet access: the canonical workflow refreshes all market data on every run.
+Il lock viene scritto in `data/processed/.ldi-run.lock`. Il manifest dell’ultima
+esecuzione è `data/processed/run_manifest.json` e contiene stato, timestamp,
+host, processo, durata, stage completati ed eventuale errore.
 
-Install the pinned runtime dependencies:
+## Installazione
+
+Usare Python 3.11 o superiore in un ambiente virtuale:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-For linting and development checks:
-
-```powershell
 python -m pip install -r requirements-dev.txt
 ```
 
-## Quick start
+## Esecuzione operativa
 
-Run the official workflow from the repository root:
+Da PowerShell, dalla root della repo:
+
+```powershell
+python scripts/run_ldi.py
+```
+
+Il comando:
+
+1. impedisce due esecuzioni contemporanee;
+2. riusa la snapshot bond archiviata oggi oppure scarica una nuova coppia di file;
+3. usa la cache FOI/HICP se valida, mensile, gap-free, positiva e non più
+   vecchia di due mesi;
+4. aggiorna gli indici mancanti o non validi;
+5. ricostruisce tutti gli artefatti derivati;
+6. produce il report e aggiorna il manifest.
+
+Per uso interattivo è ancora possibile eseguire:
 
 ```powershell
 python main.py
 ```
 
-`main.py` refreshes every prerequisite on each run, in order: bond download,
-ECB yield-curve download, bond cleaning, and cash-flow generation. It does not
-silently reuse an existing market-data cache. The result is written to
-`data/processed/ldi_optimization.xlsx`.
+Questa modalità non aggiunge il lock e il manifest; per un job schedulato usare
+sempre `scripts/run_ldi.py`.
 
-Generate the dashboard after a successful optimization:
+## Web app locale
+
+La web app è un adattatore della pipeline batch, non una seconda
+implementazione del modello. Il pulsante **Run Full Pipeline** avvia in un
+processo separato lo stesso contratto operativo usato dallo scheduler:
+`execute_with_manifest(main)`. Di conseguenza vengono prodotti gli stessi
+snapshot, Parquet, manifest, stress test e report Excel.
+
+Avvio locale con il server WSGI Waitress:
 
 ```powershell
-python -m core.plots
+python -m Webapp.server
 ```
 
-The command also creates `data/processed/plots/04_linkedin_summary.png`, a
-high-resolution 1:1 project summary suitable for a LinkedIn post.
+Il server apre automaticamente Google Chrome su
+`http://192.168.3.164:5000/`, indirizzo LAN predefinito. Host e porta possono
+essere modificati tramite `LDI_WEB_HOST` e `LDI_WEB_PORT`; per usare un host
+diverso nel browser impostare `LDI_WEB_BROWSER_HOST`. L'apertura automatica si
+disattiva con `LDI_WEB_OPEN_BROWSER=0`.
 
-## Workflow
+Ogni esecuzione web ha un identificativo persistente e una directory dedicata:
 
 ```text
-Bond market data
-       |
-       v
-Universe cleaning
-       |
-       v
-Bond cash-flow generation ----+
-                              |
-Liability JSON --> Schedule --+--> Monthly LDI engine --> Excel audit trail
-
-ECB curve ------------------------> PV and duration utilities
+data/webapp/
+|-- runs.sqlite3
+|-- config_history/
+`-- runs/<web_run_id>/
+    |-- request.json
+    |-- execution.log
+    `-- artifacts/
 ```
 
-The PNG dashboard is a separate, reproducible step run with `python -m core.plots`.
+SQLite conserva lo stato operativo; DataFrame e risultati restano in Parquet.
+Il processo web non duplica download, tassazione, solver o stress test. Il lock
+globale della pipeline impedisce inoltre la sovrapposizione tra un run web e un
+run avviato da Visual Studio o dallo scheduler.
 
-## Configure liabilities
+Le liabilities, gli scenari e i parametri esposti nella UI possono essere
+modificati dopo validazione. Il profilo web viene salvato separatamente e ogni
+run archivia lo snapshot esatto dei parametri utilizzati. `Universe Filters`
+rimane in sola lettura e continua a usare l'universo canonico della pipeline.
+L'esecuzione diretta di `main.py` mantiene i valori predefiniti del progetto.
 
-Edit [data/config/liabilities.json](data/config/liabilities.json). Each object
-requires `name`, `category`, `start_date`, `end_date`, `initial_cashflow`,
-`frequency`, and `inflation_rate`. Dates use `YYYY-MM-DD`.
+## Schedulazione consigliata
 
-`frequency` supports `annual` and `every_n_years`; the latter requires
-`interval_years`.
+Su Windows usare Task Scheduler con:
 
-## Inflation scenario
+- programma: percorso assoluto del Python nel virtual environment;
+- argomenti: `scripts/run_ldi.py`;
+- directory di avvio: root assoluta della repo;
+- frequenza: giornaliera nei giorni lavorativi, preferibilmente dopo la
+  disponibilità dei dati ufficiali;
+- esecuzione con un account tecnico dedicato;
+- logging stdout/stderr verso un file gestito dal sistema operativo;
+- alert se il processo restituisce exit code diverso da zero.
 
-`ACTIVE_INFLATION_SCENARIO` in [core/utils.py](core/utils.py) selects the default path:
-`low_inflation`, `baseline`, `high_inflation`, or `severe_inflation`. The same
-selection drives HICP-indexed BTP€i, FOI-indexed BTP Italia instruments, and
-liabilities carrying an `indexation` block. Prices and valuation dates always
-remain those in the cleaned bond-market parquet.
+Esempio:
 
-The refresh pipeline downloads FOI/HICP, rebuilds the coherent scenarios through
-the later of the liability horizon and the longest inflation-linked maturity, and
-then creates native `isincode/date/l1/l2/l3` flows for the optimizer.
-
-## Use the optimizer in Python
-
-```python
-import pandas as pd
-
-from core.ldi_engine import load_bond_inputs, optimize_cashflow_matching
-
-target = pd.DataFrame(
-    {"date": ["2030-01-01", "2031-01-01"], "cashflow": [10_000, 10_000]}
-)
-matrix, bonds = load_bond_inputs()
-result = optimize_cashflow_matching(target, matrix, bonds)
-
-print(result["portfolio"])
-print(result["cashflow_match"])
+```text
+Programma: C:\path\to\LDI\.venv\Scripts\python.exe
+Argomenti: C:\path\to\LDI\scripts\run_ldi.py
+Avvia in: C:\path\to\LDI
 ```
 
-The engine purchases non-negative integer EUR 1,000 lots. Bond cash flows
-received before a liability can cover later monthly liabilities. Any remaining
-funding requirement is shown in `uncovered_eur`; it is never hidden.
+Su Linux o container usare lo stesso comando tramite cron, systemd timer o un
+orchestratore come Prefect/Dagster. Il codice di ingestion è già idempotente e
+può essere spostato in un job containerizzato senza cambiare il dominio LDI.
 
-## Main controls
+## Dati e fonti
 
-| Control | Default |
-| --- | ---: |
-| Bond lot size | EUR 1,000 |
-| Maximum nominal per ISIN | EUR 20,000 |
-| Minimum daily nominal volume | EUR 20,000 |
-| Broker commission | 0.19%, min EUR 2.95, max EUR 19 per order |
-| Coupon tax rate | 12.5% |
-| Maximum issuer weight | 40% |
-| Maximum positions | 30 |
+| Dataset | Fonte | Destinazione |
+|---|---|---|
+| Bond market | SimpleTools for Investors | `data/raw/bonds/fd_YYYYMMDD.parquet`, `bi_YYYYMMDD.parquet` |
+| Curva Svensson | ECB Data API | `data/raw/curves/yc_YYYYMMDD.parquet` |
+| FOI escluso tabacchi | ISTAT SDMX + Rivaluta | `data/foi_xt_it.parquet` |
+| HICP escluso tabacchi | Eurostat | `data/hicp_xt_ea.parquet` |
 
-Use the public function arguments—not source edits—to model a different
-mandate. See [core/ldi_engine.py](core/ldi_engine.py) for the complete signature.
+I dati esterni vengono validati prima di essere pubblicati. Le fonti FOI e HICP
+vengono anche controllate per positività, date mensili e continuità temporale.
+L’endpoint storico ISTAT viene parametrizzato sul mese completo precedente, non
+su una data hardcoded.
 
-The current strategy buys bonds and holds them to redemption. Purchase
-commissions are therefore charged immediately. A redemption is not treated as
-a sale; `sale_commission_eur` remains zero unless an explicit sale workflow is
-introduced.
+### Archivio storico bond
 
-## Manual data refresh
+Ogni download bond genera una coppia immutabile di Parquet nella directory
+`data/raw/bonds/`:
+
+```text
+fd_YYYYMMDD.parquet    # dati End of Day
+bi_YYYYMMDD.parquet    # elenco/anagrafica obbligazioni
+```
+
+`YYYYMMDD` è la data di archiviazione, non una data dedotta dal contenuto del
+mercato. Durante una nuova esecuzione la pipeline controlla prima la coppia del
+giorno: se è presente e passa la validazione di schema, viene riusata senza
+chiamare il sito. In assenza della coppia viene eseguito il download e vengono
+creati soltanto nuovi file, mai sovrascritti snapshot storiche.
+
+Se il download fallisce, la pipeline può usare l’ultima coppia completa entro
+cinque giorni. Il fallback viene scritto nei log; oltre la soglia il job fallisce
+in modo esplicito, evitando di costruire un portafoglio con dati troppo vecchi.
+
+### Archivio storico curve ECB
+
+Le curve Svensson seguono la stessa policy in `data/raw/curves/`:
+
+```text
+yc_YYYYMMDD.parquet
+```
+
+La pipeline riusa la curva archiviata oggi se è valida; altrimenti ne scarica una
+nuova. In caso di errore dell’ECB Data API può usare l’ultima curva valida entro
+cinque giorni, altrimenti interrompe il job. Le utility di valutazione leggono
+automaticamente la snapshot curva più recente e valida, con compatibilità per il
+vecchio file `data/raw/ecb_svensson.parquet` finché presente.
+
+## Policy delle liabilities
+
+Le date configurate in `data/config/liabilities.json` seguono una policy
+esplicita e inclusiva: `end_date` identifica l'ultima annualita da pagare.
+Il parametro `LIABILITY_PAYMENT_TIMING` in `core/utils.py` puo essere
+`period_start` (inizio periodo) o `period_end` (fine periodo). Le date
+contrattuali vengono usate per l'indicizzazione FOI; il matching resta
+aggregato al mese del pagamento.
+
+## Output
+
+I grafici non fanno parte di `main.py`, dello scheduler o dei run web. Per
+eseguire il workflow e generarli esplicitamente:
 
 ```powershell
-python scripts/downloaders/bond_downloader.py
-python scripts/downloaders/yield_curve_downloader.py
-python scripts/downloaders/download_foi_xt_it.py
-python scripts/downloaders/download_hicp_xt_ea.py
-python scripts/cleaners/bond_cleaner.py
-python -m core.inflation_scenarios
-python -m core.bond_cash_flow_creator
+python plot.py
 ```
 
-The full `main.py` refresh also updates the ECB curve used by the present-value
-utilities in `core/future_liabilities.py`.
+Gli artefatti generati sono locali e non devono essere committati:
 
-## Reproducible data policy
+- `data/processed/ldi_optimization.xlsx` — report Excel;
+- `data/processed/bond_cashflows.parquet` — cash flow dettagliati;
+- `data/processed/bond_cashflow_matrix.parquet` — matrice mensile;
+- `data/processed/inflation_baseline.parquet` — baseline FOI/HICP;
+- `data/processed/inflation_stress_*.parquet` — audit degli stress;
+- `data/processed/plots/` — grafici;
+- `data/processed/run_manifest.json` — esito dell’ultima esecuzione.
 
-A fresh clone does not need any ignored data file. `python main.py` downloads
-the bond and ECB inputs, rebuilds every Parquet dataset, solves the portfolio,
-and recreates the Excel report. `python -m core.plots` then recreates the PNG charts.
+I file temporanei e i dati grezzi restano esclusi da Git tramite `.gitignore`.
 
-The versioned inputs required to reproduce the project are the Python source,
-dependency files, `data/config/`, and the two official rebased index histories
-under `data/`. Files under `data/raw/` and generated files under
-`data/processed/` must remain unversioned.
+## Riproducibilità dei run
 
-## Development
+Ogni esecuzione operativa riceve un `run_id`. Il manifest corrente è scritto in
+`data/processed/run_manifest.json`; una copia storica immutabile viene salvata
+in `data/processed/run_manifests/`. Il manifest registra hash SHA-256 e metadati
+degli input e degli output, snapshot effettivamente utilizzate, configurazioni
+JSON, commit Git, versione Python, fallback, warning e risultati quantitativi
+del solver. Gli snapshot raw archiviati e gli hash permettono di ricostruire un
+risultato senza affidarsi ai file derivati eventualmente sovrascritti dal run
+successivo.
+
+## Qualità e CI
+
+Controlli locali:
 
 ```powershell
+python -m ruff format . --check
+python -m ruff check .
 python -m unittest discover -s tests -v
-ruff format . --check
-ruff check .
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+La CI GitHub esegue gli stessi controlli in un ambiente pulito. I test sono
+deterministici e non richiedono accesso alla rete; l’esecuzione completa di
+`scripts/run_ldi.py` richiede invece rete e fonti ufficiali disponibili.
 
-## License
+## Operatività e incidenti
 
-Released under the [MIT License](LICENSE).
+Se il job fallisce:
+
+1. controllare `data/processed/run_manifest.json`;
+2. verificare il log del Task Scheduler;
+3. controllare che `.ldi-run.lock` non appartenga a un processo ancora attivo;
+4. rimuovere il lock solo dopo aver verificato che sia stale;
+5. rieseguire il job.
+
+Un fallimento non sostituisce i dataset validi precedenti: la scrittura atomica
+mantiene l’ultimo output completo disponibile.
+
+## Struttura principale
+
+```text
+core/                         dominio, pipeline e orchestrazione
+scripts/downloaders/          acquisizione fonti esterne
+scripts/cleaners/             pulizia universo obbligazionario
+scripts/run_ldi.py            entry point per scheduler
+data/config/                  configurazione contrattuale versionata
+data/raw/                     input raw locali, non versionati
+data/processed/               output derivati, non versionati
+tests/                        test unitari e contrattuali
+Webapp/                       UI, API e adattatore isolato della pipeline
+```
+
+Il dominio resta un batch finanziario con output auditabili; la web app ne è
+un'interfaccia LAN. Prima di un'esposizione oltre una rete fidata o multiutente vanno
+aggiunti autenticazione, TLS, autorizzazioni, backup esterno e alerting.

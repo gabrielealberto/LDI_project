@@ -71,7 +71,9 @@ def schedule_for_bond(market_row, nominal=NOMINAL):
             "date": date.strftime("%Y-%m-%d"),
             "l1": float(nominal if date == maturity else 0),
             "l2": 0.0,
-            "l3": round(float(nominal * annual_rate / frequency), 8) if frequency else 0.0,
+            "l3": round(float(nominal * annual_rate / frequency), 8)
+            if frequency
+            else 0.0,
         }
         for date in dates
     ]
@@ -120,14 +122,16 @@ def build_and_validate():
                 "ytm_source_percentage": ytm_source,
                 "ytm_calculated_percentage": ytm_calculated,
                 "difference_percentage_points": difference,
-                "matches": bool(np.isclose(ytm_calculated, ytm_source, atol=YTM_TOLERANCE)),
+                "matches": bool(
+                    np.isclose(ytm_calculated, ytm_source, atol=YTM_TOLERANCE)
+                ),
                 "cashflow_count": len(schedule),
             }
         )
     return schedules, validation
 
 
-def main():
+def write_contractual_cashflows():
     schedules, validation = build_and_validate()
     if not all(row["matches"] for row in validation):
         print(json.dumps(validation, indent=2))
@@ -138,7 +142,3 @@ def main():
     print(f"Contractual cash-flow rows: {len(schedules)}")
     print(f"Cash-flow JSON: {OUTPUT_PATH}")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

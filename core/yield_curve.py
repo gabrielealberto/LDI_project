@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
-from .utils import CURVE_PATH
+from .utils import CURVE_ARCHIVE_DIR, CURVE_PATH
 
 CSV_PATH = CURVE_PATH
 
@@ -11,7 +13,24 @@ def load_svensson_params(csv_path, curve_id):
     _ = curve_id
     df = pd.read_parquet(csv_path)
     params = df.set_index("PARAMETER")["VALUE"]
-    return params[["BETA0", "BETA1", "BETA2", "BETA3", "TAU1", "TAU2"]].to_numpy(dtype=float)
+    return params[["BETA0", "BETA1", "BETA2", "BETA3", "TAU1", "TAU2"]].to_numpy(
+        dtype=float
+    )
+
+
+def latest_curve_path(archive_dir=CURVE_ARCHIVE_DIR, legacy_path=CURVE_PATH):
+    """Return the newest valid archived curve, with legacy-file compatibility."""
+    archive_dir = Path(archive_dir)
+    legacy_path = Path(legacy_path)
+    for path in sorted(archive_dir.glob("yc_????????.parquet"), reverse=True):
+        try:
+            load_svensson_params(path, "ignored")
+            return path
+        except (OSError, ValueError, KeyError):
+            continue
+    if legacy_path.is_file():
+        return legacy_path
+    raise FileNotFoundError("No valid ECB curve snapshot is available.")
 
 
 def svensson_yield(t, beta0, beta1, beta2, beta3, tau1, tau2):
@@ -25,12 +44,3 @@ curves = {
     "AAA": "YC.B.U2.EUR.4F.G_N_A.SV_C_YM",
     "All bonds": "YC.B.U2.EUR.4F.G_N_C.SV_C_YM",
 }
-
-
-if __name__ == "__main__":
-    query_maturities = np.array([5.5, 8, 20.2])
-    params = load_svensson_params(CSV_PATH, curves["All bonds"])
-    rates = svensson_yield(query_maturities, *params)
-
-    for t, y in zip(query_maturities, rates):
-        print(f"{t} years: {y:.4f}%")
