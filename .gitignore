@@ -38,7 +38,21 @@ Thumbs.db
 *.log
 *.tmp
 *.temp
+*.sqlite
+*.sqlite3
+*.db
 ~$*.xlsx
+
+# LaTeX build outputs
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.toc
+report_ldi.pdf
 
 # Reproducible market data and generated reports
 data/raw/*
@@ -48,3 +62,6 @@ data/processed/*
 !data/processed/plots/
 data/processed/plots/*
 !data/processed/plots/.gitkeep
+
+# Web app runtime state and generated run artifacts
+data/webapp/
