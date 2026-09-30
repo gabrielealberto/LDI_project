@@ -1,16 +1,10 @@
-# LDI cash-flow matching
+# LDI Cash-Flow Matching
 
-Workflow Python per costruire un portafoglio obbligazionario che copra una
-schedule di passività future mensili. Il progetto scarica dati ufficiali e di
-mercato, li valida, costruisce i cash flow, risolve un problema MILP e produce
-Excel e audit Parquet. I grafici sono generati soltanto dall'entry point
-dedicato.
+Python workflow to build a bond portfolio that covers a schedule of future monthly liabilities. The project downloads official and market data, validates them, builds cash flows, solves a MILP problem, and produces Excel reports and auditable Parquet outputs. Charts are generated only through the dedicated plotting entry point.
 
-Il progetto è pensato per un’esecuzione batch schedulata. `main.py` resta
-compatibile come entry point interattivo; per l’esecuzione operativa usare
-`scripts/run_ldi.py`.
+The project is designed for scheduled batch execution. `main.py` remains available as an interactive entry point; for operational runs, use `scripts/run_ldi.py`.
 
-## Architettura
+## Architecture
 
 ```text
 Scheduler
@@ -18,40 +12,36 @@ Scheduler
     v
 scripts/run_ldi.py
     |
-    +-- lock esclusivo anti-concorrenza
-    +-- manifest di esecuzione
+    +-- exclusive anti-concurrency lock
+    +-- execution manifest
     +-- main.py
            |
-           +-- ingestion dati esterni
+           +-- external data ingestion
            |     +-- bond market data
-           |     +-- curva ECB Svensson
-           |     +-- FOI ISTAT
-           |     +-- HICP Eurostat
+           |     +-- ECB Svensson curve
+           |     +-- ISTAT FOI
+           |     +-- Eurostat HICP
            |
-           +-- validazione e pulizia
-           +-- cash flow generation
+           +-- validation and cleaning
+           +-- cash-flow generation
            +-- MILP cash-flow matching
-           +-- stress test ed Excel
+           +-- stress tests and Excel report
 ```
 
-La generazione dei grafici è separata dalla pipeline ordinaria ed è avviata
-esplicitamente tramite `plot.py`.
+Chart generation is separated from the standard pipeline and must be started explicitly through `plot.py`.
 
-I downloader condividono primitive operative in
-`core/ingestion_support.py`:
+Downloaders share operational primitives in `core/ingestion_support.py`:
 
-- retry HTTP con exponential backoff per errori transitori;
-- timeout espliciti;
-- scrittura Parquet atomica tramite file temporaneo e replace;
-- nessuna pubblicazione di file parziali.
+- HTTP retries with exponential backoff for transient errors;
+- explicit timeouts;
+- atomic Parquet writes through temporary files and replacement;
+- no publication of partial files.
 
-Il lock viene scritto in `data/processed/.ldi-run.lock`. Il manifest dell’ultima
-esecuzione è `data/processed/run_manifest.json` e contiene stato, timestamp,
-host, processo, durata, stage completati ed eventuale errore.
+The lock is written to `data/processed/.ldi-run.lock`. The latest execution manifest is `data/processed/run_manifest.json` and stores status, timestamps, host, process, duration, completed stages and any error.
 
-## Installazione
+## Installation
 
-Usare Python 3.11 o superiore in un ambiente virtuale:
+Use Python 3.11 or higher in a virtual environment:
 
 ```powershell
 python -m venv .venv
@@ -60,42 +50,36 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 ```
 
-## Esecuzione operativa
+## Operational Run
 
-Da PowerShell, dalla root della repo:
+From PowerShell, at the repository root:
 
 ```powershell
 python scripts/run_ldi.py
 ```
 
-Il comando:
+The command:
 
-1. impedisce due esecuzioni contemporanee;
-2. riusa la snapshot bond archiviata oggi oppure scarica una nuova coppia di file;
-3. usa la cache FOI/HICP se valida, mensile, gap-free, positiva e non più
-   vecchia di due mesi;
-4. aggiorna gli indici mancanti o non validi;
-5. ricostruisce tutti gli artefatti derivati;
-6. produce il report e aggiorna il manifest.
+1. prevents concurrent executions;
+2. reuses today's archived bond snapshot, or downloads a new pair of files;
+3. uses the FOI/HICP cache if it is valid, monthly, gap-free, positive and no more than two months old;
+4. updates missing or invalid indices;
+5. rebuilds all derived artifacts;
+6. produces the report and updates the manifest.
 
-Per uso interattivo è ancora possibile eseguire:
+For interactive use, you can still run:
 
 ```powershell
 python main.py
 ```
 
-Questa modalità non aggiunge il lock e il manifest; per un job schedulato usare
-sempre `scripts/run_ldi.py`.
+This mode does not add the lock or manifest; for a scheduled job, always use `scripts/run_ldi.py`.
 
-## Web app locale
+## Local Web App
 
-La web app è un adattatore della pipeline batch, non una seconda
-implementazione del modello. Il pulsante **Run Full Pipeline** avvia in un
-processo separato lo stesso contratto operativo usato dallo scheduler:
-`execute_with_manifest(main)`. Di conseguenza vengono prodotti gli stessi
-snapshot, Parquet, manifest, stress test e report Excel.
+The web app is an adapter for the batch pipeline, not a second implementation of the model. The **Run Full Pipeline** button starts the same operational contract used by the scheduler in a separate process: `execute_with_manifest(main)`. As a result, it produces the same snapshots, Parquet files, manifest, stress tests and Excel reports.
 
-Avvio locale con il server WSGI Waitress:
+Start locally with the Waitress WSGI server:
 
 ```powershell
 $env:LDI_WEB_HOST="127.0.0.1"
@@ -103,13 +87,9 @@ $env:LDI_WEB_BROWSER_HOST="127.0.0.1"
 python -m Webapp.server
 ```
 
-Il server apre automaticamente Google Chrome su `http://127.0.0.1:5000/` con
-la configurazione sopra. Host e porta possono essere modificati tramite
-`LDI_WEB_HOST` e `LDI_WEB_PORT`; per usare un host diverso nel browser impostare
-`LDI_WEB_BROWSER_HOST`. L'apertura automatica si disattiva con
-`LDI_WEB_OPEN_BROWSER=0`.
+With the configuration above, the server automatically opens Google Chrome at `http://127.0.0.1:5000/`. Host and port can be changed through `LDI_WEB_HOST` and `LDI_WEB_PORT`; to use a different browser host, set `LDI_WEB_BROWSER_HOST`. Automatic browser launch can be disabled with `LDI_WEB_OPEN_BROWSER=0`.
 
-Ogni esecuzione web ha un identificativo persistente e una directory dedicata:
+Each web execution has a persistent identifier and a dedicated directory:
 
 ```text
 data/webapp/
@@ -121,134 +101,97 @@ data/webapp/
     `-- artifacts/
 ```
 
-SQLite conserva lo stato operativo; DataFrame e risultati restano in Parquet.
-Il processo web non duplica download, tassazione, solver o stress test. Il lock
-globale della pipeline impedisce inoltre la sovrapposizione tra un run web e un
-run avviato da Visual Studio o dallo scheduler.
+SQLite stores operational state; DataFrames and results remain in Parquet. The web process does not duplicate downloads, taxation logic, solver logic or stress tests. The global pipeline lock also prevents overlap between a web run and a run started from Visual Studio or the scheduler.
 
-Le liabilities, gli scenari e i parametri esposti nella UI possono essere
-modificati dopo validazione. Il profilo web viene salvato separatamente e ogni
-run archivia lo snapshot esatto dei parametri utilizzati. `Universe Filters`
-rimane in sola lettura e continua a usare l'universo canonico della pipeline.
-L'esecuzione diretta di `main.py` mantiene i valori predefiniti del progetto.
+Liabilities, scenarios and UI-exposed parameters can be edited after validation. The web profile is saved separately and each run archives the exact parameter snapshot used. `Universe Filters` remains read-only and continues to use the canonical pipeline universe. Direct execution of `main.py` keeps the project's default values.
 
-## Schedulazione consigliata
+## Recommended Scheduling
 
-Su Windows usare Task Scheduler con:
+On Windows, use Task Scheduler with:
 
-- programma: percorso assoluto del Python nel virtual environment;
-- argomenti: `scripts/run_ldi.py`;
-- directory di avvio: root assoluta della repo;
-- frequenza: giornaliera nei giorni lavorativi, preferibilmente dopo la
-  disponibilità dei dati ufficiali;
-- esecuzione con un account tecnico dedicato;
-- logging stdout/stderr verso un file gestito dal sistema operativo;
-- alert se il processo restituisce exit code diverso da zero.
+- program: absolute path to the Python executable in the virtual environment;
+- arguments: `scripts/run_ldi.py`;
+- start directory: absolute repository root;
+- frequency: daily on business days, preferably after official data availability;
+- execution under a dedicated technical account;
+- stdout/stderr logging to an operating-system-managed file;
+- alerting if the process returns a non-zero exit code.
 
-Esempio:
+Example:
 
 ```text
-Programma: C:\path\to\LDI\.venv\Scripts\python.exe
-Argomenti: C:\path\to\LDI\scripts\run_ldi.py
-Avvia in: C:\path\to\LDI
+Program: C:\path\to\LDI\.venv\Scripts\python.exe
+Arguments: C:\path\to\LDI\scripts\run_ldi.py
+Start in: C:\path\to\LDI
 ```
 
-Su Linux o container usare lo stesso comando tramite cron, systemd timer o un
-orchestratore come Prefect/Dagster. Il codice di ingestion è già idempotente e
-può essere spostato in un job containerizzato senza cambiare il dominio LDI.
+On Linux or in containers, use the same command through cron, a systemd timer or an orchestrator such as Prefect or Dagster. The ingestion code is idempotent and can be moved into a containerized job without changing the LDI domain logic.
 
-## Dati e fonti
+## Data Sources
 
-| Dataset | Fonte | Destinazione |
+| Dataset | Source | Destination |
 |---|---|---|
 | Bond market | SimpleTools for Investors | `data/raw/bonds/fd_YYYYMMDD.parquet`, `bi_YYYYMMDD.parquet` |
-| Curva Svensson | ECB Data API | `data/raw/curves/yc_YYYYMMDD.parquet` |
-| FOI escluso tabacchi | ISTAT SDMX + Rivaluta | `data/foi_xt_it.parquet` |
-| HICP escluso tabacchi | Eurostat | `data/hicp_xt_ea.parquet` |
+| Svensson curve | ECB Data API | `data/raw/curves/yc_YYYYMMDD.parquet` |
+| FOI excluding tobacco | ISTAT SDMX + Rivaluta | `data/foi_xt_it.parquet` |
+| HICP excluding tobacco | Eurostat | `data/hicp_xt_ea.parquet` |
 
-I dati esterni vengono validati prima di essere pubblicati. Le fonti FOI e HICP
-vengono anche controllate per positività, date mensili e continuità temporale.
-L’endpoint storico ISTAT viene parametrizzato sul mese completo precedente, non
-su una data hardcoded.
+External data are validated before publication. FOI and HICP sources are also checked for positivity, monthly dates and time continuity. The historical ISTAT endpoint is parameterized on the latest complete month, not on a hardcoded date.
 
-### Archivio storico bond
+### Historical Bond Archive
 
-Ogni download bond genera una coppia immutabile di Parquet nella directory
-`data/raw/bonds/`:
+Each bond download generates an immutable pair of Parquet files in `data/raw/bonds/`:
 
 ```text
-fd_YYYYMMDD.parquet    # dati End of Day
-bi_YYYYMMDD.parquet    # elenco/anagrafica obbligazioni
+fd_YYYYMMDD.parquet    # end-of-day data
+bi_YYYYMMDD.parquet    # bond reference data
 ```
 
-`YYYYMMDD` è la data di archiviazione, non una data dedotta dal contenuto del
-mercato. Durante una nuova esecuzione la pipeline controlla prima la coppia del
-giorno: se è presente e passa la validazione di schema, viene riusata senza
-chiamare il sito. In assenza della coppia viene eseguito il download e vengono
-creati soltanto nuovi file, mai sovrascritti snapshot storiche.
+`YYYYMMDD` is the archive date, not a date inferred from market content. During a new run, the pipeline first checks today's pair: if present and schema-valid, it is reused without calling the website. If the pair is missing, the pipeline downloads the files and creates only new snapshots, never overwriting historical ones.
 
-Se il download fallisce, la pipeline può usare l’ultima coppia completa entro
-cinque giorni. Il fallback viene scritto nei log; oltre la soglia il job fallisce
-in modo esplicito, evitando di costruire un portafoglio con dati troppo vecchi.
+If the download fails, the pipeline may use the latest complete pair within five days. The fallback is written to the logs; beyond that threshold, the job fails explicitly to avoid building a portfolio with stale data.
 
-### Archivio storico curve ECB
+### Historical ECB Curve Archive
 
-Le curve Svensson seguono la stessa policy in `data/raw/curves/`:
+Svensson curves follow the same policy in `data/raw/curves/`:
 
 ```text
 yc_YYYYMMDD.parquet
 ```
 
-La pipeline riusa la curva archiviata oggi se è valida; altrimenti ne scarica una
-nuova. In caso di errore dell’ECB Data API può usare l’ultima curva valida entro
-cinque giorni, altrimenti interrompe il job. Le utility di valutazione leggono
-automaticamente la snapshot curva più recente e valida, con compatibilità per il
-vecchio file `data/raw/ecb_svensson.parquet` finché presente.
+The pipeline reuses today's archived curve if it is valid; otherwise, it downloads a new one. If the ECB Data API fails, it may use the latest valid curve within five days; otherwise, the job stops. Valuation utilities automatically read the latest valid curve snapshot, while remaining compatible with the old `data/raw/ecb_svensson.parquet` file if it still exists.
 
-## Policy delle liabilities
+## Liability Policy
 
-Le date configurate in `data/config/liabilities.json` seguono una policy
-esplicita e inclusiva: `end_date` identifica l'ultima annualita da pagare.
-Il parametro `LIABILITY_PAYMENT_TIMING` in `core/utils.py` puo essere
-`period_start` (inizio periodo) o `period_end` (fine periodo). Le date
-contrattuali vengono usate per l'indicizzazione FOI; il matching resta
-aggregato al mese del pagamento.
+Dates configured in `data/config/liabilities.json` follow an explicit inclusive policy: `end_date` identifies the final annual liability to pay. The `LIABILITY_PAYMENT_TIMING` parameter in `core/utils.py` can be `period_start` or `period_end`. Contractual dates are used for FOI indexation; matching remains aggregated at the payment-month level.
 
-## Output
+## Outputs
 
-I grafici non fanno parte di `main.py`, dello scheduler o dei run web. Per
-eseguire il workflow e generarli esplicitamente:
+Charts are not part of `main.py`, the scheduler or web runs. To run the workflow and generate charts explicitly:
 
 ```powershell
 python plot.py
 ```
 
-Gli artefatti generati sono locali e non devono essere committati:
+Generated artifacts are local and should not be committed:
 
-- `data/processed/ldi_optimization.xlsx` — report Excel;
-- `data/processed/bond_cashflows.parquet` — cash flow dettagliati;
-- `data/processed/bond_cashflow_matrix.parquet` — matrice mensile;
-- `data/processed/inflation_baseline.parquet` — baseline FOI/HICP;
-- `data/processed/inflation_stress_*.parquet` — audit degli stress;
-- `data/processed/plots/` — grafici;
-- `data/processed/run_manifest.json` — esito dell’ultima esecuzione.
+- `data/processed/ldi_optimization.xlsx` - Excel report;
+- `data/processed/bond_cashflows.parquet` - detailed cash flows;
+- `data/processed/bond_cashflow_matrix.parquet` - monthly cash-flow matrix;
+- `data/processed/inflation_baseline.parquet` - FOI/HICP baseline;
+- `data/processed/inflation_stress_*.parquet` - stress-test audit files;
+- `data/processed/plots/` - charts;
+- `data/processed/run_manifest.json` - latest execution outcome.
 
-I file temporanei e i dati grezzi restano esclusi da Git tramite `.gitignore`.
+Temporary files and raw data remain excluded from Git through `.gitignore`.
 
-## Riproducibilità dei run
+## Run Reproducibility
 
-Ogni esecuzione operativa riceve un `run_id`. Il manifest corrente è scritto in
-`data/processed/run_manifest.json`; una copia storica immutabile viene salvata
-in `data/processed/run_manifests/`. Il manifest registra hash SHA-256 e metadati
-degli input e degli output, snapshot effettivamente utilizzate, configurazioni
-JSON, commit Git, versione Python, fallback, warning e risultati quantitativi
-del solver. Gli snapshot raw archiviati e gli hash permettono di ricostruire un
-risultato senza affidarsi ai file derivati eventualmente sovrascritti dal run
-successivo.
+Each operational run receives a `run_id`. The current manifest is written to `data/processed/run_manifest.json`; an immutable historical copy is saved in `data/processed/run_manifests/`. The manifest records SHA-256 hashes and metadata for inputs and outputs, the snapshots actually used, JSON configurations, Git commit, Python version, fallbacks, warnings and quantitative solver results. Archived raw snapshots and hashes make it possible to reconstruct a result without relying on derived files that may be overwritten by a later run.
 
-## Qualità e CI
+## Quality and CI
 
-Controlli locali:
+Local checks:
 
 ```powershell
 python -m ruff format . --check
@@ -256,37 +199,32 @@ python -m ruff check .
 python -m unittest discover -s tests -v
 ```
 
-La CI GitHub esegue gli stessi controlli in un ambiente pulito. I test sono
-deterministici e non richiedono accesso alla rete; l’esecuzione completa di
-`scripts/run_ldi.py` richiede invece rete e fonti ufficiali disponibili.
+GitHub CI runs the same checks in a clean environment. Tests are deterministic and do not require network access; a full execution of `scripts/run_ldi.py` requires network access and available official data sources.
 
-## Operatività e incidenti
+## Operations and Incidents
 
-Se il job fallisce:
+If the job fails:
 
-1. controllare `data/processed/run_manifest.json`;
-2. verificare il log del Task Scheduler;
-3. controllare che `.ldi-run.lock` non appartenga a un processo ancora attivo;
-4. rimuovere il lock solo dopo aver verificato che sia stale;
-5. rieseguire il job.
+1. inspect `data/processed/run_manifest.json`;
+2. check the Task Scheduler log;
+3. verify that `.ldi-run.lock` does not belong to an active process;
+4. remove the lock only after confirming that it is stale;
+5. rerun the job.
 
-Un fallimento non sostituisce i dataset validi precedenti: la scrittura atomica
-mantiene l’ultimo output completo disponibile.
+A failed run does not replace previously valid datasets: atomic writes preserve the latest complete output available.
 
-## Struttura principale
+## Main Structure
 
 ```text
-core/                         dominio, pipeline e orchestrazione
-scripts/downloaders/          acquisizione fonti esterne
-scripts/cleaners/             pulizia universo obbligazionario
-scripts/run_ldi.py            entry point per scheduler
-data/config/                  configurazione contrattuale versionata
-data/raw/                     input raw locali, non versionati
-data/processed/               output derivati, non versionati
-tests/                        test unitari e contrattuali
-Webapp/                       UI, API e adattatore isolato della pipeline
+core/                         domain logic, pipeline and orchestration
+scripts/downloaders/          external data acquisition
+scripts/cleaners/             bond universe cleaning
+scripts/run_ldi.py            scheduler entry point
+data/config/                  versioned contractual configuration
+data/raw/                     local raw inputs, not versioned
+data/processed/               derived outputs, not versioned
+tests/                        unit and contract tests
+Webapp/                       UI, API and isolated pipeline adapter
 ```
 
-Il dominio resta un batch finanziario con output auditabili; la web app ne è
-un'interfaccia LAN. Prima di un'esposizione oltre una rete fidata o multiutente vanno
-aggiunti autenticazione, TLS, autorizzazioni, backup esterno e alerting.
+The domain remains a financial batch pipeline with auditable outputs; the web app is a LAN interface. Before exposing it outside a trusted network or to multiple users, authentication, TLS, authorization, external backups and alerting should be added.
