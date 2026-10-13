@@ -16,8 +16,11 @@
 `foi_xt_it.parquet` and `hicp_xt_ea.parquet` are the rebased official monthly
 histories used to construct the dynamic inflation baseline. They are refreshed
 by the dedicated downloaders when absent, malformed, or older than the
-pipeline's two-month cache window. `inflation_baseline.parquet` is generated
-from both histories and is consumed by indexed liabilities and
+pipeline's two-month cache window. The FOI downloader obtains current history
+from ISTAT SDMX-CSV and retains the validated, immutable February 1992--December
+1995 Rivaluta segment when refreshing the file, so a later update does not
+depend on that historical workbook endpoint. `inflation_baseline.parquet` is
+generated from both histories and is consumed by indexed liabilities and
 inflation-linked bond cash flows.
 
 The remaining directories are local, reproducible working areas:

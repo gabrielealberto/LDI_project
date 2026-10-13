@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,6 +20,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = PROJECT_ROOT / "data" / "foi_xt_it.parquet"
 TIMEOUT = 30
 RIVALUTA_BASE = "https://rivaluta.istat.it/Rivaluta/TavoleStream.action"
+HISTORICAL_START = pd.Timestamp("1992-02-01")
+HISTORICAL_END = pd.Timestamp("1995-12-01")
 ITALIAN_MONTHS = (
     "Gennaio",
     "Febbraio",
@@ -46,20 +47,25 @@ SPECS = (
 )
 
 
-def download_sdmx_data(flow: str, key: str) -> dict[str, Any]:
-    """Download a single, fully constrained official ISTAT SDMX series."""
+def download_sdmx_data(flow: str, key: str) -> pd.DataFrame:
+    """Download one constrained ISTAT SDMX series in its tabular format.
+
+    ISTAT's current ``jsondata`` response advertises the right time periods but
+    sets every observation value to null.  Its official SDMX-CSV response for
+    the same query contains the published values, so use that representation.
+    """
     try:
         response = HTTP_SESSION.get(
             f"{ISTAT_DATA_ROOT}/{flow}/{key}",
-            params={"format": "jsondata"},
+            params={"format": "csvfile"},
             timeout=TIMEOUT,
         )
         response.raise_for_status()
-        return response.json()
+        return pd.read_csv(BytesIO(response.content))
     except requests.RequestException as error:
         raise RuntimeError(f"ISTAT download failed for {flow}: {error}") from error
     except ValueError as error:
-        raise RuntimeError(f"ISTAT returned invalid SDMX-JSON for {flow}") from error
+        raise RuntimeError(f"ISTAT returned invalid SDMX-CSV for {flow}") from error
 
 
 def download_pre_1996() -> pd.DataFrame:
@@ -135,74 +141,88 @@ def download_pre_1996() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def parse_observations(
-    payload: dict[str, Any], flow: str, base: str, coefficient: float
-) -> pd.DataFrame:
-    """Validate SDMX labels and extract observations from one constrained series."""
+def load_cached_pre_1996(output_path: Path = OUTPUT) -> pd.DataFrame | None:
+    """Reuse the immutable Rivaluta segment when a complete local copy exists.
+
+    Rivaluta is only used for Feb-1992--Dec-1995; those observations never
+    change.  Avoid making the entire monthly refresh depend on its availability
+    once that historical segment has already been validated and stored locally.
+    """
     try:
-        structure = payload["data"]["structures"][0]
-        series_dimensions = structure["dimensions"]["series"]
-        observation_dimension = structure["dimensions"]["observation"][0]
-        series = payload["data"]["dataSets"][0]["series"]
-    except (KeyError, IndexError, TypeError) as error:
-        raise RuntimeError(f"Unexpected SDMX schema for {flow}") from error
-    expected = {
-        "FREQ": "M",
-        "REF_AREA": "IT",
-        "MEASURE": "4",
-    }
-    labels: dict[str, str] = {}
-    for dimension in series_dimensions:
-        values = dimension.get("values", [])
-        if len(values) != 1:
-            raise RuntimeError(f"ISTAT response for {flow} contains multiple series.")
-        labels[dimension["id"]] = values[0].get("name", "")
-        if (
-            dimension["id"] in expected
-            and values[0].get("id") != expected[dimension["id"]]
-        ):
-            raise RuntimeError(f"Unexpected {dimension['id']} in {flow}.")
-    indicator = labels.get("DATA_TYPE", "").lower()
+        cached = pd.read_parquet(output_path)
+        cached["date"] = pd.to_datetime(cached["date"])
+        historical = cached.loc[
+            cached["date"].between(HISTORICAL_START, HISTORICAL_END),
+        ].copy()
+    except (OSError, ValueError, KeyError):
+        return None
+    expected_dates = pd.date_range(HISTORICAL_START, HISTORICAL_END, freq="MS")
     if (
-        "famiglie di operai" not in indicator
-        and "blue and white-collar" not in indicator
+        len(historical) != len(expected_dates)
+        or historical["date"].duplicated().any()
+        or not pd.DatetimeIndex(historical["date"].sort_values()).equals(expected_dates)
+        or "foi_xt_it" not in historical
+        or historical["foi_xt_it"].isna().any()
+        or not (pd.to_numeric(historical["foi_xt_it"], errors="coerce") > 0).all()
     ):
-        raise RuntimeError(f"{flow} is not the FOI index.")
-    category = next(
-        (
-            value
-            for d in series_dimensions
-            if "COICOP" in d["id"]
-            for value in d["values"]
-        ),
-        {},
-    )
-    category_name = category.get("name", "").lower()
-    if category.get("id") != "00ST" or not (
-        "tabac" in category_name or "tobacco" in category_name
-    ):
-        raise RuntimeError(f"{flow} is not the all-items excluding-tobacco series.")
-    if len(series) != 1:
-        raise RuntimeError(
-            f"ISTAT returned more than one observation series for {flow}."
-        )
-    periods = observation_dimension.get("values", [])
-    observations = next(iter(series.values())).get("observations", {})
+        return None
+    return historical
+
+
+def parse_observations(
+    payload: pd.DataFrame, flow: str, base: str, coefficient: float
+) -> pd.DataFrame:
+    """Validate and extract observations from one constrained SDMX-CSV series."""
+    required = {
+        "FREQ",
+        "REF_AREA",
+        "DATA_TYPE",
+        "MEASURE",
+        "TIME_PERIOD",
+        "OBS_VALUE",
+    }
+    if not required.issubset(payload.columns):
+        missing = ", ".join(sorted(required - set(payload.columns)))
+        raise RuntimeError(f"Unexpected SDMX-CSV schema for {flow}; missing {missing}.")
+    if payload.empty:
+        raise RuntimeError(f"ISTAT returned no rows for {flow}.")
+    category_columns = [
+        column
+        for column in payload.columns
+        if "COICOP" in column and not column.startswith("NOTE_")
+    ]
+    if len(category_columns) != 1:
+        raise RuntimeError(f"Unexpected COICOP dimension in {flow}.")
+    category_column = category_columns[0]
+    try:
+        dimensions = payload[
+            ["FREQ", "REF_AREA", "DATA_TYPE", "MEASURE", category_column]
+        ]
+        if any(dimensions[column].nunique(dropna=False) != 1 for column in dimensions):
+            raise RuntimeError(f"ISTAT response for {flow} contains multiple series.")
+    except KeyError as error:
+        raise RuntimeError(f"Unexpected SDMX-CSV schema for {flow}") from error
+    expected = {"FREQ": "M", "REF_AREA": "IT", "MEASURE": 4, category_column: "00ST"}
+    for column, value in expected.items():
+        actual = dimensions.iloc[0][column]
+        if str(actual) != str(value):
+            raise RuntimeError(f"Unexpected {column} in {flow}: {actual!r}.")
+    if pd.isna(dimensions.iloc[0]["DATA_TYPE"]):
+        raise RuntimeError(f"ISTAT response for {flow} has no FOI indicator.")
     rows = []
-    for position, value in observations.items():
-        number = value[0] if isinstance(value, list) else value
-        if number is None:
+    for observation in payload.itertuples(index=False):
+        number = pd.to_numeric(observation.OBS_VALUE, errors="coerce")
+        if pd.isna(number):
             continue
-        period = periods[int(position)]["id"]
         rows.append(
             {
-                "date": pd.Timestamp(f"{period}-01"),
+                "date": pd.Timestamp(f"{observation.TIME_PERIOD}-01"),
                 "foi_xt_it": float(number) / coefficient,
                 "source_dataset": flow,
                 "original_base": base,
                 "is_rebased": coefficient != 1.0,
                 "rebase_factor": 1.0 / coefficient,
-                "observation_status": None,
+                "observation_status": getattr(observation, "OBS_STATUS", None),
             }
         )
     return pd.DataFrame(rows)
@@ -244,8 +264,19 @@ def validate_series(frame: pd.DataFrame) -> pd.DataFrame:
 
 def download_foi_series() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    frames = [download_pre_1996()]
-    logging.info("ISTAT_Rivaluta_FOI_nt: %s observations (1992=100)", len(frames[0]))
+    historical = load_cached_pre_1996()
+    if historical is None:
+        historical = download_pre_1996()
+        logging.info(
+            "ISTAT_Rivaluta_FOI_nt: downloaded %s historical observations (1992=100)",
+            len(historical),
+        )
+    else:
+        logging.info(
+            "ISTAT_Rivaluta_FOI_nt: reused %s immutable historical observations from cache",
+            len(historical),
+        )
+    frames = [historical]
     for flow, key, base, coefficient in SPECS:
         frame = parse_observations(
             download_sdmx_data(flow, key), flow, base, coefficient

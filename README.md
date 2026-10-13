@@ -144,7 +144,7 @@ On Linux or in containers, use the same command through cron, a systemd timer or
 | FOI excluding tobacco | ISTAT SDMX + Rivaluta | `data/foi_xt_it.parquet` |
 | HICP excluding tobacco | Eurostat | `data/hicp_xt_ea.parquet` |
 
-External data are validated before publication. FOI and HICP sources are also checked for positivity, monthly dates and time continuity. The historical ISTAT endpoint is parameterized on the latest complete month, not on a hardcoded date.
+External data are validated before publication. FOI and HICP sources are also checked for positivity, monthly dates and time continuity. The FOI downloader reads ISTAT's official SDMX-CSV representation because the corresponding JSON response can contain null observation values. It joins the SDMX history to the official Rivaluta workbook segment for February 1992--December 1995; after that immutable segment has been validated and stored locally, later refreshes reuse it rather than depending on the historical workbook endpoint. The historical request is parameterized on the latest complete month, not on a hardcoded date.
 
 ### Historical Bond Archive
 
